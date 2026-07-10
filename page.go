@@ -14,6 +14,7 @@ type Shell func(f *Frame) template.HTML
 
 // Page is a lazy page: a shell plus its registered regions.
 type Page struct {
+	name    string
 	shell   Shell
 	regions map[string]Region
 	order   []string
@@ -22,6 +23,17 @@ type Page struct {
 // NewPage creates a page with the given shell.
 func NewPage(shell Shell) *Page {
 	return &Page{shell: shell, regions: map[string]Region{}}
+}
+
+// Named sets the page's name, used to namespace its per-region fetch
+// endpoints (see ClientFetch). The name must be empty or of the form
+// [A-Za-z0-9_-]+; an invalid name panics. Returns the page for chaining.
+func (p *Page) Named(name string) *Page {
+	if name != "" && !validID(name) {
+		panic("quicken: invalid page name " + name)
+	}
+	p.name = name
+	return p
 }
 
 // Add registers a region. Regions render in the order added. Adding a region
