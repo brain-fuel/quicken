@@ -21,3 +21,7 @@ func runNodeScript(t *testing.T, script string) {
 func TestShimFetchRuntimeViaNode(t *testing.T) {
 	runNodeScript(t, "client/shim_fetch_test.js")
 }
+
+func TestShimPrefetchViaNode(t *testing.T) {
+	runNodeScript(t, "client/shim_prefetch_test.js")
+}
