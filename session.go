@@ -16,8 +16,24 @@ type regionState struct {
 
 // LiveSession holds one connection's per-region state, keyed by region id.
 type LiveSession struct {
-	mu      sync.Mutex
-	regions map[string]*regionState
+	mu        sync.Mutex
+	regions   map[string]*regionState
+	outbox    chan serverMsg
+	firstSent bool
+}
+
+// markFirstSent reports true the first time it is called on a session, and
+// false on every call after that. The long-poll path uses it to enqueue the
+// "first" messages for all regions exactly once, on the poll that resumes
+// the session.
+func (s *LiveSession) markFirstSent() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.firstSent {
+		return false
+	}
+	s.firstSent = true
+	return true
 }
 
 func (s *LiveSession) get(id string) (*regionState, bool) {

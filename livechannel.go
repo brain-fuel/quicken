@@ -4,13 +4,19 @@ import (
 	"encoding/json"
 	"net/http"
 	"sync"
+	"time"
 )
 
 // LiveChannel is the live transport: a WebSocket carries the first render and
 // every subsequent fine-grained patch. A zero value uses a process-wide
 // in-memory session store; set Store to supply your own.
+//
+// pollTimeout controls how long the long-poll GET endpoint blocks waiting for
+// the next queued message before responding 204. Zero means a default (see
+// defaultPollTimeout in longpoll.go).
 type LiveChannel struct {
-	Store SessionStore
+	Store       SessionStore
+	pollTimeout time.Duration
 }
 
 var defaultStoreOnce sync.Once
@@ -47,7 +53,7 @@ func (lc LiveChannel) Deliver(w http.ResponseWriter, r *http.Request, p *Page) e
 		http.Error(w, "session error", http.StatusInternalServerError)
 		return err
 	}
-	sess := &LiveSession{regions: map[string]*regionState{}}
+	sess := &LiveSession{regions: map[string]*regionState{}, outbox: make(chan serverMsg, 32)}
 	ids := make([]string, 0, len(p.liveRegions()))
 	for _, lr := range p.liveRegions() {
 		st, err := lr.Mount(ctx, nil)
@@ -82,10 +88,13 @@ func (lc LiveChannel) Deliver(w http.ResponseWriter, r *http.Request, p *Page) e
 	return err
 }
 
-// Routes mounts the WebSocket endpoint for this page.
+// Routes mounts the WebSocket endpoint and the long-poll fallback endpoints
+// for this page.
 func (lc LiveChannel) Routes(p *Page) map[string]http.Handler {
 	return map[string]http.Handler{
-		liveWSPath(p.name): lc.wsHandler(p),
+		liveWSPath(p.name):              lc.wsHandler(p),
+		livePollPath(p.name) + "/poll":  lc.pollHandler(p),
+		livePollPath(p.name) + "/event": lc.eventHandler(p),
 	}
 }
 
