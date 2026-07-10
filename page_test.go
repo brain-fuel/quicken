@@ -82,6 +82,78 @@ func TestFrameHeadReferencesScript(t *testing.T) {
 	}
 }
 
+type stubLive struct{ id string }
+
+func (s stubLive) ID() string                  { return s.id }
+func (s stubLive) Skeleton(RenderContext) Tree { return Text("sk") }
+func (s stubLive) Mount(RenderContext, Params) (State, error) {
+	return 0, nil
+}
+func (s stubLive) HandleEvent(RenderContext, string, Payload, State) (State, error) {
+	return 0, nil
+}
+func (s stubLive) Render(State) Tree { return Text("r") }
+
+func TestPageAddLiveRegistersAndOrders(t *testing.T) {
+	p := NewPage(func(*Frame) template.HTML { return "" }).
+		AddLive(stubLive{id: "a"}).
+		AddLive(stubLive{id: "b"})
+	got := p.liveRegions()
+	if len(got) != 2 || got[0].ID() != "a" || got[1].ID() != "b" {
+		t.Fatalf("liveRegions order = %v", got)
+	}
+}
+
+func TestPageAddLiveRejectsDuplicateAcrossKinds(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic on id already used by a deferred region")
+		}
+	}()
+	NewPage(func(*Frame) template.HTML { return "" }).
+		Add(RegionFunc("dup", func(RenderContext) Tree { return Text("s") },
+			func(RenderContext) Tree { return Text("r") })).
+		AddLive(stubLive{id: "dup"})
+}
+
+func TestPageAddLiveRejectsInvalidID(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic on invalid id")
+		}
+	}()
+	NewPage(emptyShell).AddLive(stubLive{id: "bad id!"})
+}
+
+func TestPageAddLiveRejectsDuplicateLiveID(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic on id already used by a live region")
+		}
+	}()
+	NewPage(emptyShell).AddLive(stubLive{id: "dup"}).AddLive(stubLive{id: "dup"})
+}
+
+func TestAddRejectsDuplicateAcrossKinds(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic on id already used by a live region")
+		}
+	}()
+	NewPage(emptyShell).AddLive(stubLive{id: "dup"}).Add(teaser("dup"))
+}
+
+func TestFrameSlotRendersLiveSkeletonWrapper(t *testing.T) {
+	p := NewPage(emptyShell).AddLive(stubLive{id: "cards"})
+	f := &Frame{page: p, ctx: RenderContext{}}
+	got := string(f.Slot("cards"))
+	for _, want := range []string{`id="q-slot-cards"`, "data-q-slot", "data-q-live", "data-q-pending", "sk"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("Slot = %q, missing %q", got, want)
+		}
+	}
+}
+
 func TestSplitBody(t *testing.T) {
 	head, tail := splitBody("<html><body>x</body></html>")
 	if head != "<html><body>x" {

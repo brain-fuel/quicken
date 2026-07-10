@@ -1,0 +1,81 @@
+package quicken
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"sync"
+)
+
+// regionState is a live region's memory on one connection: its opaque State
+// and the dynamic slot values last sent to the client, which the diff compares
+// against.
+type regionState struct {
+	state        State
+	lastDynamics []string
+}
+
+// LiveSession holds one connection's per-region state, keyed by region id.
+type LiveSession struct {
+	mu      sync.Mutex
+	regions map[string]*regionState
+}
+
+func (s *LiveSession) get(id string) (*regionState, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rs, ok := s.regions[id]
+	return rs, ok
+}
+
+func (s *LiveSession) set(id string, rs *regionState) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.regions[id] = rs
+}
+
+// SessionStore maps a resume token to a LiveSession. The in-memory
+// implementation is the only one built for v1; the interface lets a shared
+// store replace it later without touching the core.
+type SessionStore interface {
+	Get(token string) (*LiveSession, bool)
+	Put(token string, s *LiveSession)
+	Delete(token string)
+}
+
+type memoryStore struct {
+	mu sync.RWMutex
+	m  map[string]*LiveSession
+}
+
+// NewMemoryStore returns an in-process SessionStore.
+func NewMemoryStore() SessionStore {
+	return &memoryStore{m: map[string]*LiveSession{}}
+}
+
+func (s *memoryStore) Get(token string) (*LiveSession, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	sess, ok := s.m[token]
+	return sess, ok
+}
+
+func (s *memoryStore) Put(token string, sess *LiveSession) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.m[token] = sess
+}
+
+func (s *memoryStore) Delete(token string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.m, token)
+}
+
+// newToken mints an opaque resume token: 16 random bytes as hex.
+func newToken() (string, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b[:]), nil
+}
