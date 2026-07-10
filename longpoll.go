@@ -72,7 +72,7 @@ func (lc LiveChannel) pollHandler(p *Page) http.Handler {
 						fm = errorMsg(lr.ID(), "region panicked")
 						return
 					}
-					fm = firstMsg(lr.ID(), Tree{statics: tree.statics, dynamics: rs.lastDynamics})
+					fm = firstMsg(lr.ID(), Slots(tree.Statics(), rs.lastDynamics))
 				})
 				if ok {
 					select {

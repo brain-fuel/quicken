@@ -2,7 +2,10 @@ module goforge.dev/quicken
 
 go 1.26
 
-require github.com/chromedp/chromedp v0.15.1
+require (
+	github.com/chromedp/chromedp v0.15.1
+	goforge.dev/cadence v0.0.0-00010101000000-000000000000
+)
 
 require (
 	github.com/chromedp/cdproto v0.0.0-20260321001828-e3e3800016bc // indirect
@@ -13,3 +16,5 @@ require (
 	github.com/gobwas/ws v1.4.0 // indirect
 	golang.org/x/sys v0.42.0 // indirect
 )
+
+replace goforge.dev/cadence => ../cadence

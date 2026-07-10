@@ -70,7 +70,7 @@ func (lc LiveChannel) Deliver(w http.ResponseWriter, r *http.Request, p *Page) e
 			return err
 		}
 		tree := lr.Render(st)
-		sess.set(lr.ID(), &regionState{state: st, lastStatics: tree.statics, lastDynamics: tree.dynamics})
+		sess.set(lr.ID(), &regionState{state: st, lastStatics: tree.Statics(), lastDynamics: tree.Dynamics()})
 		ids = append(ids, lr.ID())
 	}
 	lc.store().Put(token, sess)
@@ -141,8 +141,8 @@ func (lc LiveChannel) serve(conn *wsConn, p *Page, ctx RenderContext) {
 		found := sess.withRegion(lr.ID(), func(rs *regionState) {
 			tree, renderOK = safeRender(lr, rs.state)
 			if renderOK {
-				rs.lastStatics = tree.statics
-				rs.lastDynamics = tree.dynamics
+				rs.lastStatics = tree.Statics()
+				rs.lastDynamics = tree.Dynamics()
 			}
 		})
 		if !found {
@@ -201,11 +201,11 @@ func (lc LiveChannel) applyEvent(lr LiveRegion, ctx RenderContext, rs *regionSta
 		return errorMsg(m.Region, err.Error())
 	}
 	tree := lr.Render(newState)
-	prev := Tree{statics: rs.lastStatics, dynamics: rs.lastDynamics}
+	prev := Slots(rs.lastStatics, rs.lastDynamics)
 	changed, full := tree.Diff(prev)
 	rs.state = newState
-	rs.lastStatics = tree.statics
-	rs.lastDynamics = tree.dynamics
+	rs.lastStatics = tree.Statics()
+	rs.lastDynamics = tree.Dynamics()
 	if full {
 		return fullMsg(m.Region, tree)
 	}

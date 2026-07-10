@@ -730,7 +730,7 @@ func mountCounterSession(id string, ctx RenderContext) (LiveRegion, *LiveSession
 	st, _ := lr.Mount(ctx, nil)
 	tree := lr.Render(st)
 	sess := &LiveSession{regions: map[string]*regionState{
-		id: {state: st, lastDynamics: tree.dynamics},
+		id: {state: st, lastDynamics: tree.Dynamics()},
 	}}
 	return lr, sess
 }

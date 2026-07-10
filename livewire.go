@@ -46,13 +46,13 @@ func encodeServer(m serverMsg) ([]byte, error) { return json.Marshal(m) }
 // firstMsg builds the initial message for a region: its full statics and
 // dynamics, sent once when a client attaches.
 func firstMsg(region string, t Tree) serverMsg {
-	return serverMsg{Type: "first", Region: region, Statics: t.statics, Dynamics: t.dynamics}
+	return serverMsg{Type: "first", Region: region, Statics: t.Statics(), Dynamics: t.Dynamics()}
 }
 
 // fullMsg builds a full re-render message, same shape as firstMsg, sent when
 // a region's static shape has changed and a patch is not possible.
 func fullMsg(region string, t Tree) serverMsg {
-	return serverMsg{Type: "full", Region: region, Statics: t.statics, Dynamics: t.dynamics}
+	return serverMsg{Type: "full", Region: region, Statics: t.Statics(), Dynamics: t.Dynamics()}
 }
 
 // patchMsg builds a message carrying only the dynamic slots that changed.
@@ -70,21 +70,23 @@ func errorMsg(region, message string) serverMsg {
 // as the conformance oracle the client's stitchLive is checked against; it is
 // not called on the server hot path.
 func renderLiveHTML(t Tree) string {
-	if len(t.dynamics) == 0 {
-		if len(t.statics) == 0 {
+	statics := t.Statics()
+	dynamics := t.Dynamics()
+	if len(dynamics) == 0 {
+		if len(statics) == 0 {
 			return ""
 		}
-		return t.statics[0]
+		return statics[0]
 	}
 	var b strings.Builder
-	for i, d := range t.dynamics {
-		b.WriteString(t.statics[i])
+	for i, d := range dynamics {
+		b.WriteString(statics[i])
 		b.WriteString(`<q-d data-qi="`)
 		b.WriteString(strconv.Itoa(i))
 		b.WriteString(`">`)
 		b.WriteString(d)
 		b.WriteString(`</q-d>`)
 	}
-	b.WriteString(t.statics[len(t.statics)-1])
+	b.WriteString(statics[len(statics)-1])
 	return b.String()
 }
