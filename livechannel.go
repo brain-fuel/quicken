@@ -32,13 +32,21 @@ func (lc LiveChannel) store() SessionStore {
 
 const liveBase = "/_live"
 
+// liveBasePath is the base path for a page's live endpoints: /_live for an
+// unnamed page, or /_live/<name> when the page is named. The WebSocket, poll,
+// and event endpoints are siblings mounted at this base plus "/ws", "/poll",
+// and "/event" respectively.
+func liveBasePath(name string) string {
+	if name == "" {
+		return liveBase
+	}
+	return liveBase + "/" + name
+}
+
 // liveWSPath is the WebSocket endpoint for a page: /_live/ws for an unnamed
 // page, or /_live/<name>/ws when the page is named.
 func liveWSPath(name string) string {
-	if name == "" {
-		return liveBase + "/ws"
-	}
-	return liveBase + "/" + name + "/ws"
+	return liveBasePath(name) + "/ws"
 }
 
 // Deliver renders the shell with skeletons and a live manifest, mints a
@@ -92,9 +100,9 @@ func (lc LiveChannel) Deliver(w http.ResponseWriter, r *http.Request, p *Page) e
 // for this page.
 func (lc LiveChannel) Routes(p *Page) map[string]http.Handler {
 	return map[string]http.Handler{
-		liveWSPath(p.name):              lc.wsHandler(p),
-		livePollPath(p.name) + "/poll":  lc.pollHandler(p),
-		livePollPath(p.name) + "/event": lc.eventHandler(p),
+		liveWSPath(p.name):    lc.wsHandler(p),
+		livePollPath(p.name):  lc.pollHandler(p),
+		liveEventPath(p.name): lc.eventHandler(p),
 	}
 }
 

@@ -11,14 +11,30 @@ import (
 // LiveChannel.pollTimeout is unset.
 const defaultPollTimeout = 25 * time.Second
 
-// livePollPath is the long-poll base path for a page: /_live/poll for an
-// unnamed page, or /_live/<name>/poll when the page is named. The poll and
-// event endpoints are mounted at this path plus "/poll" and "/event".
+// livePollPath is the long-poll GET endpoint for a page: /_live/poll for an
+// unnamed page, or /_live/<name>/poll when the page is named.
 func livePollPath(name string) string {
-	if name == "" {
-		return liveBase + "/poll"
+	return liveBasePath(name) + "/poll"
+}
+
+// liveEventPath is the long-poll POST endpoint for a page: /_live/event for
+// an unnamed page, or /_live/<name>/event when the page is named.
+func liveEventPath(name string) string {
+	return liveBasePath(name) + "/event"
+}
+
+// drainOutbox empties sess's outbox without blocking, discarding any
+// messages already queued. The long-poll first-send path uses it so a fresh
+// "first" batch (built from current state) supersedes any stale patches an
+// event POST queued before the client ever polled.
+func drainOutbox(sess *LiveSession) {
+	for {
+		select {
+		case <-sess.outbox:
+		default:
+			return
+		}
 	}
-	return liveBase + "/" + name + "/poll"
 }
 
 // timeout returns the configured poll timeout, or defaultPollTimeout when
@@ -31,9 +47,13 @@ func (lc LiveChannel) timeout() time.Duration {
 }
 
 // pollHandler serves GET .../poll?token=...: on the first poll for a session
-// it enqueues the "first" message for every live region, then blocks on the
-// session's outbox up to the configured timeout. It responds with the next
-// queued message as JSON, 204 on timeout, or 404 for an unknown token.
+// it drains any stale messages an event POST queued before this poll ran,
+// then enqueues a fresh "first" message for every live region (each enqueue
+// also watches the request context, so a client disconnect during this step
+// releases the handler instead of blocking on a full outbox forever), then
+// blocks on the session's outbox up to the configured timeout. It responds
+// with the next queued message as JSON, 204 on timeout, or 404 for an
+// unknown token.
 func (lc LiveChannel) pollHandler(p *Page) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := r.URL.Query().Get("token")
@@ -43,13 +63,18 @@ func (lc LiveChannel) pollHandler(p *Page) http.Handler {
 			return
 		}
 		if sess.markFirstSent() {
+			drainOutbox(sess)
 			for _, lr := range p.liveRegions() {
 				var fm serverMsg
 				ok := sess.withRegion(lr.ID(), func(rs *regionState) {
 					fm = firstMsg(lr.ID(), Tree{statics: lr.Render(rs.state).statics, dynamics: rs.lastDynamics})
 				})
 				if ok {
-					sess.outbox <- fm
+					select {
+					case sess.outbox <- fm:
+					case <-r.Context().Done():
+						return
+					}
 				}
 			}
 		}
