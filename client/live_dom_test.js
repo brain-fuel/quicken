@@ -131,9 +131,22 @@ function assert(cond, msg) {
 
 try {
   // Scenario 1: applyPatch replaces only the addressed <q-d> marker's
-  // innerHTML, leaving its sibling marker untouched.
+  // innerHTML, leaving its sibling marker untouched, AND leaves an
+  // identically-addressed marker in a different region's slot untouched.
+  // The second slot's data-qi="0" marker is built first (and its id sorts
+  // after 'c' alphabetically) so a regression that widens the lookup from
+  // the region's own slot to a document-wide `document.querySelector`
+  // would grab this other slot's marker first and fail the assertions
+  // below, rather than passing by accidental creation-order luck.
   (function () {
     all = [];
+    const slotD = new El('div');
+    slotD.setAttribute('id', 'q-slot-d');
+    const dd0 = new El('q-d');
+    dd0.setAttribute('data-qi', '0');
+    dd0.innerHTML = 'Z';
+    slotD.appendChild(dd0);
+
     const slot = new El('div');
     slot.setAttribute('id', 'q-slot-c');
     const d0 = new El('q-d');
@@ -149,6 +162,10 @@ try {
 
     assert(d0.innerHTML === 'NEW', 'patched marker should read NEW, got ' + d0.innerHTML);
     assert(d1.innerHTML === 'B', 'untouched marker should still read B, got ' + d1.innerHTML);
+    assert(
+      dd0.innerHTML === 'Z',
+      'colliding data-qi="0" marker in region d should be untouched, got ' + dd0.innerHTML
+    );
   })();
 
   // Scenario 2: applyFirst stitches statics/dynamics into slot-addressed
