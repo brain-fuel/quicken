@@ -52,12 +52,13 @@ cache is shared with region fetches, so a prefetched url loads instantly.
 
 ## Testing
 
-The library module is standard-library only. Its browser end-to-end test lives
-in the nested `e2e/` module so its browser-automation dependency (chromedp) and
-newer toolchain stay out of the library. Run it opt-in:
+The library code is standard-library only; chromedp is a test-time dependency
+(imported only by the browser test), so consumers of the library never build
+it. The headless-browser end-to-end test is part of the normal suite and is
+default-skipped. Run it opt-in:
 
 ```
-cd e2e && QUICKEN_BROWSER_TEST=1 go test ./...
+QUICKEN_BROWSER_TEST=1 go test ./...
 ```
 
 It skips cleanly when no browser is installed.

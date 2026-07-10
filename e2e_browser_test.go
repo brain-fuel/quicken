@@ -1,9 +1,4 @@
-// Package e2e holds quicken's headless-browser end-to-end tests. It is a
-// separate Go module so its browser-automation dependency (chromedp) and the
-// newer Go toolchain that dependency pulls in stay out of the quicken library
-// module, which remains standard-library only on go 1.22. Run it opt-in with
-// `cd e2e && QUICKEN_BROWSER_TEST=1 go test ./...`.
-package e2e
+package quicken_test
 
 import (
 	"context"
@@ -22,7 +17,8 @@ import (
 // TestClientFetchInBrowser loads a ClientFetch page in a real browser and
 // asserts the skeleton is replaced by the fetched region content. It is
 // default-skipped: it runs only when QUICKEN_BROWSER_TEST=1, and it skips
-// (never fails) if a browser cannot be launched.
+// (never fails) if a browser cannot be launched. chromedp is a test-time
+// dependency; consumers of the library do not build it.
 func TestClientFetchInBrowser(t *testing.T) {
 	if os.Getenv("QUICKEN_BROWSER_TEST") == "" {
 		t.Skip("set QUICKEN_BROWSER_TEST=1 to run the browser e2e (needs chromium)")
