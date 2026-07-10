@@ -10,9 +10,17 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 )
 
 const wsMagic = "258EAFA5-E914-47DA-95CA-C5AB0DC85B39"
+
+// maxMessageSize bounds both a single frame's declared payload length and the
+// total size of a reassembled (possibly fragmented) application message. It
+// guards against a malicious or buggy client declaring an unbounded 64-bit
+// length, or driving memory exhaustion through an endless run of continuation
+// frames.
+const maxMessageSize = 8 << 20 // 8 MiB
 
 const (
 	opCont   byte = 0x0
@@ -33,6 +41,7 @@ func wsAccept(key string) string {
 type wsConn struct {
 	conn net.Conn
 	br   *bufio.Reader
+	wmu  sync.Mutex // serializes writeFrame against concurrent writers (auto-pong vs application writes)
 }
 
 func newReader(c net.Conn) *bufio.Reader { return bufio.NewReader(c) }
@@ -99,6 +108,16 @@ func (c *wsConn) readFrame() (opcode byte, fin bool, payload []byte, err error) 
 		}
 		n = binary.BigEndian.Uint64(ext[:])
 	}
+	if n > maxMessageSize {
+		return 0, false, nil, errors.New("quicken: frame too large")
+	}
+	isControl := opcode == opClose || opcode == opPing || opcode == opPong
+	if isControl && (n > 125 || !fin) {
+		return 0, false, nil, errors.New("quicken: invalid control frame")
+	}
+	if !masked && n > 0 {
+		return 0, false, nil, errors.New("quicken: client frame not masked")
+	}
 	var mask [4]byte
 	if masked {
 		if _, err = io.ReadFull(c.br, mask[:]); err != nil {
@@ -136,12 +155,20 @@ func (c *wsConn) ReadMessage() (byte, []byte, error) {
 		case opPong:
 			continue
 		case opClose:
-			c.WriteClose(1000)
+			if werr := c.WriteClose(1000); werr != nil {
+				return 0, nil, werr
+			}
 			return 0, nil, io.EOF
 		case opText, opBinary:
+			if len(buf)+len(payload) > maxMessageSize {
+				return 0, nil, errors.New("quicken: message too large")
+			}
 			msgOp = op
 			buf = append(buf, payload...)
 		case opCont:
+			if len(buf)+len(payload) > maxMessageSize {
+				return 0, nil, errors.New("quicken: message too large")
+			}
 			buf = append(buf, payload...)
 		}
 		if fin && (op == opText || op == opBinary || op == opCont) {
@@ -151,6 +178,8 @@ func (c *wsConn) ReadMessage() (byte, []byte, error) {
 }
 
 func (c *wsConn) writeFrame(opcode byte, payload []byte) error {
+	c.wmu.Lock()
+	defer c.wmu.Unlock()
 	var hdr []byte
 	hdr = append(hdr, 0x80|opcode)
 	n := len(payload)

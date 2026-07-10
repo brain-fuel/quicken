@@ -147,7 +147,9 @@ func TestWSWriteTextIsUnmaskedServerFrame(t *testing.T) {
 }
 
 // writeUnmaskedClientFrame writes a single frame with the mask bit clear, for
-// tests only, to exercise the reader's unmasked path.
+// tests only, to exercise the reader's rejection of unmasked client frames
+// (RFC 6455 section 5.1: a server MUST fail the connection on an unmasked
+// frame from a client).
 func writeUnmaskedClientFrame(conn net.Conn, opcode byte, payload []byte) error {
 	var hdr []byte
 	hdr = append(hdr, 0x80|opcode)
@@ -173,18 +175,153 @@ func writeUnmaskedClientFrame(conn net.Conn, opcode byte, payload []byte) error 
 	return err
 }
 
-func TestWSReadMessageHandlesUnmaskedFrame(t *testing.T) {
+// writeClientFrameFin writes a masked frame with an explicit FIN bit and full
+// RFC6455 length encoding (including the 16-bit and 64-bit extensions), for
+// tests only. writeClientFrame always sets FIN and writeClientFragment only
+// supports payloads under 126 bytes, so this fills the gap for tests that
+// need a non-final fragment larger than 125 bytes.
+func writeClientFrameFin(conn net.Conn, opcode byte, payload []byte, fin bool) error {
+	b0 := opcode
+	if fin {
+		b0 |= 0x80
+	}
+	var hdr []byte
+	hdr = append(hdr, b0)
+	n := len(payload)
+	switch {
+	case n < 126:
+		hdr = append(hdr, 0x80|byte(n))
+	case n < 1<<16:
+		hdr = append(hdr, 0x80|126)
+		var ext [2]byte
+		binary.BigEndian.PutUint16(ext[:], uint16(n))
+		hdr = append(hdr, ext[:]...)
+	default:
+		hdr = append(hdr, 0x80|127)
+		var ext [8]byte
+		binary.BigEndian.PutUint64(ext[:], uint64(n))
+		hdr = append(hdr, ext[:]...)
+	}
+	key := []byte{0x12, 0x34, 0x56, 0x78}
+	hdr = append(hdr, key...)
+	masked := make([]byte, n)
+	for i := 0; i < n; i++ {
+		masked[i] = payload[i] ^ key[i%4]
+	}
+	if _, err := conn.Write(hdr); err != nil {
+		return err
+	}
+	_, err := conn.Write(masked)
+	return err
+}
+
+func TestWSReadMessageRejectsUnmaskedFrame(t *testing.T) {
 	cli, srv := net.Pipe()
 	c := &wsConn{conn: srv, br: newReader(srv)}
 	go func() {
 		writeUnmaskedClientFrame(cli, opText, []byte("plain"))
 	}()
-	op, payload, err := c.ReadMessage()
-	if err != nil {
-		t.Fatalf("ReadMessage: %v", err)
+	if _, _, err := c.ReadMessage(); err == nil {
+		t.Fatal("expected an error for an unmasked client data frame")
 	}
-	if op != opText || string(payload) != "plain" {
-		t.Fatalf("got op=%x payload=%q", op, payload)
+}
+
+func TestWSReadFrameOversizedSingleFrameErrors(t *testing.T) {
+	cli, srv := net.Pipe()
+	c := &wsConn{conn: srv, br: newReader(srv)}
+	go func() {
+		var hdr []byte
+		hdr = append(hdr, 0x80|opBinary)  // FIN + binary
+		hdr = append(hdr, 0x80|byte(127)) // masked, 64-bit extended length
+		var ext [8]byte
+		// A declared length far beyond maxMessageSize. readFrame must reject
+		// this before ever calling make([]byte, n), so the peer never needs
+		// to send the mask key or any payload bytes for the read to fail.
+		binary.BigEndian.PutUint64(ext[:], uint64(1)<<62)
+		hdr = append(hdr, ext[:]...)
+		cli.Write(hdr)
+	}()
+	if _, _, err := c.ReadMessage(); err == nil {
+		t.Fatal("expected an error for a declared frame length over maxMessageSize")
+	}
+}
+
+func TestWSReadMessageOversizedReassemblyErrors(t *testing.T) {
+	cli, srv := net.Pipe()
+	c := &wsConn{conn: srv, br: newReader(srv)}
+	first := make([]byte, maxMessageSize) // exactly at the per-frame bound, allowed alone.
+	go func() {
+		writeClientFrameFin(cli, opBinary, first, false)
+		writeClientFrameFin(cli, opCont, []byte("x"), true) // pushes the total 1 byte over the bound.
+	}()
+	if _, _, err := c.ReadMessage(); err == nil {
+		t.Fatal("expected an error when the reassembled message exceeds maxMessageSize")
+	}
+}
+
+func TestWSReadMessageOversizedViaRepeatedDataOpcodeErrors(t *testing.T) {
+	// This codec does not require a continuation opcode after a non-final
+	// data frame, so a second opText frame (rather than opCont) can also
+	// drive the accumulation buffer over maxMessageSize; this exercises that
+	// distinct size check, in the opText/opBinary case rather than opCont.
+	cli, srv := net.Pipe()
+	c := &wsConn{conn: srv, br: newReader(srv)}
+	first := make([]byte, maxMessageSize) // exactly at the per-frame bound, allowed alone.
+	go func() {
+		writeClientFrameFin(cli, opText, first, false)
+		writeClientFrameFin(cli, opText, []byte("x"), true) // pushes the total 1 byte over the bound.
+	}()
+	if _, _, err := c.ReadMessage(); err == nil {
+		t.Fatal("expected an error when a repeated opText frame pushes the message over maxMessageSize")
+	}
+}
+
+func TestWSReadFrameControlFrameOverMaxPayloadErrors(t *testing.T) {
+	cli, srv := net.Pipe()
+	c := &wsConn{conn: srv, br: newReader(srv)}
+	go func() {
+		// FIN + ping, masked, 16-bit extended length declaring 126 bytes: over
+		// the 125-byte control-frame cap. readFrame must reject this right
+		// after the length is decoded, before requiring a mask key or
+		// payload, so only the 4-byte header is sent.
+		var hdr []byte
+		hdr = append(hdr, 0x80|opPing)
+		hdr = append(hdr, 0x80|126)
+		var ext [2]byte
+		binary.BigEndian.PutUint16(ext[:], 126)
+		hdr = append(hdr, ext[:]...)
+		cli.Write(hdr)
+	}()
+	if _, _, err := c.ReadMessage(); err == nil {
+		t.Fatal("expected an error for a control frame payload over 125 bytes")
+	}
+}
+
+func TestWSReadFrameFragmentedControlFrameErrors(t *testing.T) {
+	cli, srv := net.Pipe()
+	c := &wsConn{conn: srv, br: newReader(srv)}
+	go func() {
+		// FIN clear + ping opcode, masked, 1-byte declared length: control
+		// frames must not be fragmented, so readFrame should reject this from
+		// the 2-byte header alone, before requiring a mask key or payload.
+		cli.Write([]byte{opPing, 0x80 | 1})
+	}()
+	if _, _, err := c.ReadMessage(); err == nil {
+		t.Fatal("expected an error for a fragmented (FIN-clear) ping frame")
+	}
+}
+
+func TestWSReadMessageCloseEchoWriteErrorPropagates(t *testing.T) {
+	cli, srv := net.Pipe()
+	c := &wsConn{conn: srv, br: newReader(srv)}
+	go func() {
+		var p [2]byte
+		binary.BigEndian.PutUint16(p[:], 1000)
+		writeClientFrame(cli, opClose, p[:])
+		cli.Close() // close the peer immediately so the server's close echo fails to write.
+	}()
+	if _, _, err := c.ReadMessage(); err == nil {
+		t.Fatal("expected an error when the close echo write fails")
 	}
 }
 
