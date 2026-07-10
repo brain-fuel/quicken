@@ -54,7 +54,7 @@ func (p *Page) Handler(t Transport) http.Handler {
 // Frame is handed to a Shell so it can place region skeletons and the shim.
 type Frame struct {
 	page *Page
-	ctx  Context
+	ctx  RenderContext
 }
 
 // Head returns the markup for the document head: the shim script tag.

@@ -5,9 +5,9 @@ import (
 	"net/http"
 )
 
-// Context carries request scope into a region's render. Later phases add a
+// RenderContext carries request scope into a region's render. Later phases add a
 // resume token and per-connection data; the type is the stable seam.
-type Context struct {
+type RenderContext struct {
 	Ctx context.Context
 	R   *http.Request
 }
@@ -26,8 +26,8 @@ type Payload map[string]any
 // expensive Render produced afterward. Both return a Tree.
 type Region interface {
 	ID() string
-	Skeleton(ctx Context) Tree
-	Render(ctx Context) Tree
+	Skeleton(ctx RenderContext) Tree
+	Render(ctx RenderContext) Tree
 }
 
 // LiveRegion adds server-held state and event handling. It is defined here so
@@ -35,24 +35,24 @@ type Region interface {
 // later phase. A plain Region is the degenerate live region with no events.
 type LiveRegion interface {
 	ID() string
-	Skeleton(ctx Context) Tree
-	Mount(ctx Context, params Params) (State, error)
-	HandleEvent(ctx Context, name string, payload Payload, s State) (State, error)
+	Skeleton(ctx RenderContext) Tree
+	Mount(ctx RenderContext, params Params) (State, error)
+	HandleEvent(ctx RenderContext, name string, payload Payload, s State) (State, error)
 	Render(s State) Tree
 }
 
 // RegionFunc builds a Region from an id and two render functions, so callers
 // need not declare a type for simple regions.
-func RegionFunc(id string, skeleton, render func(Context) Tree) Region {
+func RegionFunc(id string, skeleton, render func(RenderContext) Tree) Region {
 	return funcRegion{id: id, skeleton: skeleton, render: render}
 }
 
 type funcRegion struct {
 	id       string
-	skeleton func(Context) Tree
-	render   func(Context) Tree
+	skeleton func(RenderContext) Tree
+	render   func(RenderContext) Tree
 }
 
-func (f funcRegion) ID() string              { return f.id }
-func (f funcRegion) Skeleton(c Context) Tree { return f.skeleton(c) }
-func (f funcRegion) Render(c Context) Tree   { return f.render(c) }
+func (f funcRegion) ID() string                    { return f.id }
+func (f funcRegion) Skeleton(c RenderContext) Tree { return f.skeleton(c) }
+func (f funcRegion) Render(c RenderContext) Tree   { return f.render(c) }

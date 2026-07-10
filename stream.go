@@ -16,7 +16,7 @@ type StreamHTML struct{}
 
 // Deliver implements Transport.
 func (StreamHTML) Deliver(w http.ResponseWriter, r *http.Request, p *Page) error {
-	ctx := Context{Ctx: r.Context(), R: r}
+	ctx := RenderContext{Ctx: r.Context(), R: r}
 	frame := &Frame{page: p, ctx: ctx}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -67,7 +67,7 @@ func (StreamHTML) Deliver(w http.ResponseWriter, r *http.Request, p *Page) error
 
 // renderRegion runs a region's Render, turning a panic into an inline error
 // card so one failing region cannot abort the whole page.
-func renderRegion(region Region, ctx Context) (html string) {
+func renderRegion(region Region, ctx RenderContext) (html string) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			html = fmt.Sprintf(`<div data-q-error>region %q failed to render</div>`, region.ID())

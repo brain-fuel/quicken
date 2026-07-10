@@ -10,8 +10,8 @@ func emptyShell(*Frame) template.HTML { return "" }
 
 func teaser(id string) Region {
 	return RegionFunc(id,
-		func(Context) Tree { return Text("skel-" + id) },
-		func(Context) Tree { return Text("real-" + id) },
+		func(RenderContext) Tree { return Text("skel-" + id) },
+		func(RenderContext) Tree { return Text("real-" + id) },
 	)
 }
 
@@ -44,7 +44,7 @@ func TestAddRejectsEmptyID(t *testing.T) {
 
 func TestFrameSlotRendersSkeletonWrapper(t *testing.T) {
 	p := NewPage(emptyShell).Add(teaser("cards"))
-	f := &Frame{page: p, ctx: Context{}}
+	f := &Frame{page: p, ctx: RenderContext{}}
 	got := string(f.Slot("cards"))
 	for _, want := range []string{`id="q-slot-cards"`, "data-q-slot", "data-q-pending", "skel-cards"} {
 		if !strings.Contains(got, want) {
@@ -55,7 +55,7 @@ func TestFrameSlotRendersSkeletonWrapper(t *testing.T) {
 
 func TestFrameSlotMissingRegion(t *testing.T) {
 	p := NewPage(emptyShell)
-	f := &Frame{page: p, ctx: Context{}}
+	f := &Frame{page: p, ctx: RenderContext{}}
 	got := string(f.Slot("nope"))
 	if !strings.Contains(got, "data-q-missing") {
 		t.Fatalf("Slot for missing region = %q, want data-q-missing", got)
@@ -64,7 +64,7 @@ func TestFrameSlotMissingRegion(t *testing.T) {
 
 func TestFrameSlotMissingIDEscaped(t *testing.T) {
 	p := NewPage(emptyShell)
-	f := &Frame{page: p, ctx: Context{}}
+	f := &Frame{page: p, ctx: RenderContext{}}
 	got := string(f.Slot(`x" onmouseover="alert(1)`))
 	if strings.Contains(got, `onmouseover="alert(1)"`) {
 		t.Fatalf("Slot did not escape a hostile id: %q", got)
@@ -75,7 +75,7 @@ func TestFrameSlotMissingIDEscaped(t *testing.T) {
 }
 
 func TestFrameHeadReferencesScript(t *testing.T) {
-	f := &Frame{page: NewPage(emptyShell), ctx: Context{}}
+	f := &Frame{page: NewPage(emptyShell), ctx: RenderContext{}}
 	got := string(f.Head())
 	if !strings.Contains(got, ScriptPath) || !strings.Contains(got, "<script") {
 		t.Fatalf("Head = %q, want script tag with %q", got, ScriptPath)

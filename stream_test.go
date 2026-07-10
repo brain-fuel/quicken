@@ -19,11 +19,11 @@ func demoPage() *Page {
 	}
 	return NewPage(shell).
 		Add(RegionFunc("alpha",
-			func(Context) Tree { return Text("<i>loading alpha</i>") },
-			func(Context) Tree { return Text("<p>ALPHA CONTENT</p>") })).
+			func(RenderContext) Tree { return Text("<i>loading alpha</i>") },
+			func(RenderContext) Tree { return Text("<p>ALPHA CONTENT</p>") })).
 		Add(RegionFunc("beta",
-			func(Context) Tree { return Text("<i>loading beta</i>") },
-			func(Context) Tree { return Text("<p>BETA CONTENT</p>") }))
+			func(RenderContext) Tree { return Text("<i>loading beta</i>") },
+			func(RenderContext) Tree { return Text("<p>BETA CONTENT</p>") }))
 }
 
 func TestStreamDeliversShellSkeletonsFillsAndClose(t *testing.T) {
@@ -71,11 +71,11 @@ func TestStreamRegionPanicBecomesErrorCard(t *testing.T) {
 			"</head><body>" + string(f.Slot("boom")) + string(f.Slot("ok")) + "</body></html>")
 	}).
 		Add(RegionFunc("boom",
-			func(Context) Tree { return Text("sk") },
-			func(Context) Tree { panic("render exploded") })).
+			func(RenderContext) Tree { return Text("sk") },
+			func(RenderContext) Tree { panic("render exploded") })).
 		Add(RegionFunc("ok",
-			func(Context) Tree { return Text("sk") },
-			func(Context) Tree { return Text("<p>OK CONTENT</p>") }))
+			func(RenderContext) Tree { return Text("sk") },
+			func(RenderContext) Tree { return Text("<p>OK CONTENT</p>") }))
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
@@ -98,8 +98,8 @@ func TestStreamHonorsContextCancellation(t *testing.T) {
 			"</head><body>" + string(f.Slot("slow")) + "</body></html>")
 	}).
 		Add(RegionFunc("slow",
-			func(Context) Tree { return Text("sk") },
-			func(Context) Tree {
+			func(RenderContext) Tree { return Text("sk") },
+			func(RenderContext) Tree {
 				<-block
 				return Text("<p>SLOW CONTENT</p>")
 			}))
