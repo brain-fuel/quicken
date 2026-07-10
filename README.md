@@ -27,3 +27,20 @@ mux.Handle("/", page.Handler(nil)) // nil transport uses StreamHTML
 
 With JavaScript the region is relocated into its slot as it finishes; without
 JavaScript its content stays readable at the end of the document.
+
+## ClientFetch and prefetch
+
+The ClientFetch transport sends a fast shell with skeletons and no region
+content; the client fetches each region from `/_regions/<page>/<id>` after
+load. Mount it with Serve so those endpoints exist:
+
+```go
+mux := http.NewServeMux()
+quicken.Mount(mux)
+quicken.Serve(mux, "/", page.Named("demo"), quicken.ClientFetch{})
+```
+
+Prefetch-on-intent warms the client cache before a click. Mark a trigger
+element with `data-q-prefetch="/_regions/demo/cards"` and, optionally,
+`data-q-prefetch-on="mouseover"` (the default), `focusin`, or `visible`. The
+cache is shared with region fetches, so a prefetched url loads instantly.
