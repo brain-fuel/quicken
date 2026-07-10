@@ -62,6 +62,18 @@ func TestFrameSlotMissingRegion(t *testing.T) {
 	}
 }
 
+func TestFrameSlotMissingIDEscaped(t *testing.T) {
+	p := NewPage(emptyShell)
+	f := &Frame{page: p, ctx: Context{}}
+	got := string(f.Slot(`x" onmouseover="alert(1)`))
+	if strings.Contains(got, `onmouseover="alert(1)"`) {
+		t.Fatalf("Slot did not escape a hostile id: %q", got)
+	}
+	if !strings.Contains(got, "data-q-missing") {
+		t.Fatalf("Slot lost its missing marker: %q", got)
+	}
+}
+
 func TestFrameHeadReferencesScript(t *testing.T) {
 	f := &Frame{page: NewPage(emptyShell), ctx: Context{}}
 	got := string(f.Head())

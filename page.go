@@ -67,7 +67,8 @@ func (f *Frame) Head() template.HTML {
 func (f *Frame) Slot(id string) template.HTML {
 	r, ok := f.page.regions[id]
 	if !ok {
-		return template.HTML(`<div id="q-slot-` + id + `" data-q-slot data-q-missing></div>`)
+		esc := template.HTMLEscapeString(id)
+		return template.HTML(`<div id="q-slot-` + esc + `" data-q-slot data-q-missing></div>`)
 	}
 	sk := r.Skeleton(f.ctx).HTML()
 	return template.HTML(`<div id="q-slot-` + id + `" data-q-slot data-q-pending>` + sk + `</div>`)
