@@ -33,6 +33,20 @@ func (s *LiveSession) set(id string, rs *regionState) {
 	s.regions[id] = rs
 }
 
+// withRegion runs fn against the region's state while holding the session
+// lock, so a full read-modify-write of the regionState is atomic. It returns
+// false when the region id is not present.
+func (s *LiveSession) withRegion(id string, fn func(*regionState)) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rs, ok := s.regions[id]
+	if !ok {
+		return false
+	}
+	fn(rs)
+	return true
+}
+
 // SessionStore maps a resume token to a LiveSession. The in-memory
 // implementation is the only one built for v1; the interface lets a shared
 // store replace it later without touching the core.

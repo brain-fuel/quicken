@@ -1,6 +1,9 @@
 package quicken
 
-import "testing"
+import (
+	"sync"
+	"testing"
+)
 
 func TestMemoryStorePutGetDelete(t *testing.T) {
 	st := NewMemoryStore()
@@ -51,5 +54,70 @@ func TestLiveSessionGetSet(t *testing.T) {
 	got, ok := s.get("r")
 	if !ok || got != rs {
 		t.Fatalf("get after set = %v, %v", got, ok)
+	}
+}
+
+func TestLiveSessionWithRegionMissingReturnsFalse(t *testing.T) {
+	s := &LiveSession{regions: map[string]*regionState{}}
+	called := false
+	found := s.withRegion("nope", func(*regionState) { called = true })
+	if found || called {
+		t.Fatalf("withRegion on a missing id: found=%v called=%v, want false/false", found, called)
+	}
+}
+
+func TestLiveSessionWithRegionRunsAndCommits(t *testing.T) {
+	s := &LiveSession{regions: map[string]*regionState{
+		"r": {state: 1, lastDynamics: []string{"a"}},
+	}}
+	found := s.withRegion("r", func(rs *regionState) {
+		rs.state = rs.state.(int) + 1
+	})
+	if !found {
+		t.Fatal("withRegion on a present id returned false")
+	}
+	rs, _ := s.get("r")
+	if rs.state.(int) != 2 {
+		t.Fatalf("state after withRegion = %v, want 2", rs.state)
+	}
+}
+
+// TestLiveSessionWithRegionSerializesConcurrentReadModifyWrite drives two
+// goroutines concurrently against the SAME regionState through withRegion,
+// each doing a non-atomic read-modify-write (read state, add 1, write state
+// back). Without withRegion holding the session lock across the whole
+// operation, two goroutines racing here would both drop increments and the
+// final count would fall short of the total; with the lock held for the
+// full closure, every increment is serialized and none are lost. Run with
+// -race to also confirm no data race is reported on the regionState fields.
+func TestLiveSessionWithRegionSerializesConcurrentReadModifyWrite(t *testing.T) {
+	s := &LiveSession{regions: map[string]*regionState{
+		"c": {state: 0, lastDynamics: nil},
+	}}
+
+	const goroutines = 8
+	const incsPerGoroutine = 500
+	want := goroutines * incsPerGoroutine
+
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for g := 0; g < goroutines; g++ {
+		go func() {
+			defer wg.Done()
+			for i := 0; i < incsPerGoroutine; i++ {
+				s.withRegion("c", func(rs *regionState) {
+					rs.state = rs.state.(int) + 1
+				})
+			}
+		}()
+	}
+	wg.Wait()
+
+	rs, ok := s.get("c")
+	if !ok {
+		t.Fatal("region missing after concurrent withRegion calls")
+	}
+	if rs.state.(int) != want {
+		t.Fatalf("final state = %d, want %d (a lower count means the read-modify-write raced)", rs.state.(int), want)
 	}
 }

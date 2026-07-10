@@ -119,13 +119,14 @@ func (lc LiveChannel) serve(conn *wsConn, p *Page, ctx RenderContext) {
 		return
 	}
 	for _, lr := range p.liveRegions() {
-		rs, ok := sess.get(lr.ID())
-		if !ok {
+		var tree Tree
+		found := sess.withRegion(lr.ID(), func(rs *regionState) {
+			tree = lr.Render(rs.state)
+			rs.lastDynamics = tree.dynamics
+		})
+		if !found {
 			continue
 		}
-		tree := lr.Render(rs.state)
-		rs.lastDynamics = tree.dynamics
-		sess.set(lr.ID(), rs)
 		if err := lc.send(conn, firstMsg(lr.ID(), tree)); err != nil {
 			return
 		}
@@ -150,11 +151,13 @@ func (lc LiveChannel) handleEvent(conn *wsConn, p *Page, ctx RenderContext, sess
 	if !ok {
 		return nil
 	}
-	rs, ok := sess.get(m.Region)
-	if !ok {
+	var out serverMsg
+	found := sess.withRegion(m.Region, func(rs *regionState) {
+		out = lc.applyEvent(lr, ctx, rs, m)
+	})
+	if !found {
 		return nil
 	}
-	out := lc.applyEvent(lr, ctx, rs, m)
 	return lc.send(conn, out)
 }
 
@@ -179,12 +182,9 @@ func (lc LiveChannel) applyEvent(lr LiveRegion, ctx RenderContext, rs *regionSta
 	}
 
 	prev := Tree{statics: tree.statics, dynamics: rs.lastDynamics}
-	changed, full := tree.Diff(prev)
+	changed, _ := tree.Diff(prev)
 	rs.state = newState
 	rs.lastDynamics = tree.dynamics
-	if full {
-		return fullMsg(m.Region, tree)
-	}
 	return patchMsg(m.Region, changed)
 }
 

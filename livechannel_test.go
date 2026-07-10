@@ -695,15 +695,3 @@ func TestLiveChannelServeEventWriteErrorReturns(t *testing.T) {
 		t.Fatal("serve did not return after the event-response write failed")
 	}
 }
-
-// Note on applyEvent's second fullReplace path (the one Tree.Diff itself can
-// report, as opposed to the explicit lastDynamics-length guard): it is
-// provably unreachable given how applyEvent builds prev. prev.statics is
-// always assigned from the CURRENT tree's statics (Tree{statics: tree.statics,
-// dynamics: rs.lastDynamics}), so Tree.Diff's static-shape comparison always
-// compares tree.statics against itself and can never disagree. Only the
-// explicit length guard before it can ever produce a full replace in
-// practice. Confirmed experimentally with a region whose statics change
-// content (not count) between renders: Diff still reports a patch, never
-// fullReplace. See task-4-report.md for detail; no test targets that branch
-// because it cannot be driven true.
