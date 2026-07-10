@@ -59,3 +59,22 @@ func TestDiffFullReplaceOnStaticShapeChange(t *testing.T) {
 		t.Fatalf("changed = %v, want nil", changed)
 	}
 }
+
+func TestDiffFullReplaceOnStaticCountChange(t *testing.T) {
+	a := Slots([]string{"s0", "s1"}, []string{"d"})
+	b := Text("s0")
+	changed, full := a.Diff(b)
+	if !full {
+		t.Fatal("fullReplace = false, want true for differing static counts")
+	}
+	if changed != nil {
+		t.Fatalf("changed = %v, want nil", changed)
+	}
+}
+
+func TestZeroValueTreeHTMLEmpty(t *testing.T) {
+	var zero Tree
+	if got := zero.HTML(); got != "" {
+		t.Fatalf("zero-value Tree HTML = %q, want empty", got)
+	}
+}
