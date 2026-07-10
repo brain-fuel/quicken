@@ -42,15 +42,23 @@ func (StreamHTML) Deliver(w http.ResponseWriter, r *http.Request, p *Page) error
 		}()
 	}
 
+	var done <-chan struct{}
+	if ctx.Ctx != nil {
+		done = ctx.Ctx.Done()
+	}
 	for range p.order {
-		res := <-results
-		fill := fmt.Sprintf(
-			`<div data-q-fill="%s">%s</div><script>window.__quicken&&window.__quicken.swap(%s)</script>`,
-			res.id, res.html, jsStringLiteral(res.id))
-		if _, err := io.WriteString(w, fill); err != nil {
-			return err
+		select {
+		case res := <-results:
+			fill := fmt.Sprintf(
+				`<div data-q-fill="%s">%s</div><script>window.__quicken&&window.__quicken.swap(%s)</script>`,
+				res.id, res.html, jsStringLiteral(res.id))
+			if _, err := io.WriteString(w, fill); err != nil {
+				return err
+			}
+			flush(w)
+		case <-done:
+			return ctx.Ctx.Err()
 		}
-		flush(w)
 	}
 
 	_, err := io.WriteString(w, tail)
@@ -75,8 +83,11 @@ func flush(w http.ResponseWriter) {
 }
 
 // jsStringLiteral renders s as a JavaScript string literal for an inline
-// script. Region ids are validated to a safe charset on Add; this is defense
-// in depth.
+// script. This is safe only because region ids are restricted by validID to
+// [A-Za-z0-9_-]+ on Add: strconv.Quote produces a valid JS string literal for
+// that charset. strconv.Quote is not a general script-context escaper (it does
+// not escape </script>, <, >, or U+2028/2029), so it must not be used on
+// arbitrary strings here.
 func jsStringLiteral(s string) string {
 	return strconv.Quote(s)
 }

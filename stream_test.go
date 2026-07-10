@@ -1,6 +1,7 @@
 package quicken
 
 import (
+	"context"
 	"html/template"
 	"net/http"
 	"net/http/httptest"
@@ -87,5 +88,36 @@ func TestStreamRegionPanicBecomesErrorCard(t *testing.T) {
 	}
 	if !strings.Contains(body, "OK CONTENT") {
 		t.Fatal("a sibling region was lost when another panicked")
+	}
+}
+
+func TestStreamHonorsContextCancellation(t *testing.T) {
+	block := make(chan struct{})
+	page := NewPage(func(f *Frame) template.HTML {
+		return template.HTML("<!doctype html><html><head>" + string(f.Head()) +
+			"</head><body>" + string(f.Slot("slow")) + "</body></html>")
+	}).
+		Add(RegionFunc("slow",
+			func(Context) Tree { return Text("sk") },
+			func(Context) Tree {
+				<-block
+				return Text("<p>SLOW CONTENT</p>")
+			}))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- (StreamHTML{}).Deliver(rec, req, page)
+	}()
+
+	cancel()
+	err := <-errCh
+	close(block) // let the still-running render goroutine finish, no leak.
+
+	if err != context.Canceled {
+		t.Fatalf("Deliver error = %v, want context.Canceled", err)
 	}
 }
