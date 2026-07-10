@@ -70,6 +70,15 @@ func TestFromMarkupPanicsOnDuplicateMarker(t *testing.T) {
 	FromMarkup(`<!--quicken lazy dup--><!--quicken lazy dup-->`)
 }
 
+func TestFromMarkupPanicsOnDuplicateHead(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic on duplicate head marker")
+		}
+	}()
+	FromMarkup(`<head><!--quicken head--><!--quicken head--></head>`)
+}
+
 func TestFromMarkupPanicsOnMalformedMarkup(t *testing.T) {
 	defer func() {
 		if recover() == nil {

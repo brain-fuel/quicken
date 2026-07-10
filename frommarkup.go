@@ -9,15 +9,27 @@ import (
 // <!--quicken head--> for the client shim, and <!--quicken lazy id--> or
 // <!--quicken live id--> for a region's slot. Register the regions with Add
 // and AddLive; the slot each marker produces follows the registration. It
-// panics on malformed markup or a duplicate region marker, which is always a
-// programming error.
+// panics on malformed markup or a duplicate region or head marker, which is
+// always a programming error.
+//
+// The markup is expected to be author-controlled or trusted: a compile-time
+// constant or the output of a trusted template, analogous to
+// html/template.Must. An application assembling markup from dynamic or
+// untrusted input should validate it first or recover from the panic.
 func FromMarkup(markup string) *Page {
 	segs, err := parseMarkup(markup)
 	if err != nil {
 		panic(err.Error())
 	}
 	seen := map[string]bool{}
+	headSeen := false
 	for _, sg := range segs {
+		if sg.kind == kindHead {
+			if headSeen {
+				panic("quicken: duplicate head marker")
+			}
+			headSeen = true
+		}
 		if sg.kind == kindLazy || sg.kind == kindLive {
 			if seen[sg.text] {
 				panic("quicken: duplicate region marker " + sg.text)

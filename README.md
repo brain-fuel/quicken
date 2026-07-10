@@ -146,6 +146,13 @@ identically.
   page := quicken.FromMarkup(markup).Add(cardsRegion)
   ```
 
+  A literal `<!--quicken ...-->` comment hand-typed directly into an
+  html/template source is stripped by html/template and produces nothing, so
+  an author working in html/template must use the `Helpers()` funcs (which
+  return `template.HTML`) rather than typing the marker comment by hand; a
+  marker document passed straight to `FromMarkup` (not routed through
+  html/template) is unaffected by this and can contain the literal comment.
+
 Because the marker document and template-helper styles both go through
 `FromMarkup`, and `FromMarkup` builds an ordinary func-registry `*Page`
 underneath, all three styles are interchangeable: switching how a shell is
