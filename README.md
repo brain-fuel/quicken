@@ -4,9 +4,11 @@ Fast-shell, deferred-region rendering for Go web apps. Paint the shell now,
 fill the expensive parts as they become ready, stay readable without
 JavaScript.
 
-Status: phase 3. Deferred first render over a streaming HTML transport, a
+Status: phase 4. Deferred first render over a streaming HTML transport, a
 ClientFetch transport with prefetch-on-intent, and a LiveChannel transport for
-server-held live regions. More authoring adapters land in later phases.
+server-held live regions. The markup marker document and html/template helper
+authoring adapters have landed; explorer integration remains for a later
+phase.
 
 License: MIT (Copyright (c) 2026 Goforge).
 
@@ -109,6 +111,45 @@ Two limitations apply to LiveChannel in this release:
   upgrading. Note that driving a live region already requires the unguessable
   per-session resume token embedded in the page, so an event cannot be injected
   without first reading that page.
+
+## Authoring
+
+A page's shell can be authored three ways, and all three produce an ordinary
+`*Page`, so any transport (StreamHTML, ClientFetch, LiveChannel) serves them
+identically.
+
+- **Func-registry.** Write the shell as a Go function over a `*Frame`, calling
+  `f.Head()` and `f.Slot(id)` where the shim and each region belong. This is
+  the style shown in Usage above, and it gives full control since the shell is
+  plain Go.
+- **Marker document.** Write the shell as an HTML string carrying quicken
+  markers, and hand it to `FromMarkup`. `<!--quicken head-->` marks the shim,
+  and `<!--quicken lazy id-->` or `<!--quicken live id-->` marks a region's
+  slot. Register the regions with `Add` and `AddLive` as usual; the slot each
+  marker produces follows the registration.
+
+  ```go
+  page := quicken.FromMarkup(`<!doctype html><html>
+  <head><!--quicken head--></head>
+  <body><!--quicken lazy cards--></body></html>`).
+      Add(cardsRegion)
+  ```
+
+- **Template helpers.** Author the shell as an `html/template`, using the
+  `lazy`, `live`, and `quickenHead` funcs from `Helpers()` to emit the same
+  markers a marker document would. Render the template with `RenderMarkup`,
+  then hand the result to `FromMarkup`.
+
+  ```go
+  tmpl := template.Must(template.New("page").Funcs(quicken.Helpers()).Parse(page))
+  markup, _ := quicken.RenderMarkup(tmpl, data)
+  page := quicken.FromMarkup(markup).Add(cardsRegion)
+  ```
+
+Because the marker document and template-helper styles both go through
+`FromMarkup`, and `FromMarkup` builds an ordinary func-registry `*Page`
+underneath, all three styles are interchangeable: switching how a shell is
+authored never changes what gets delivered.
 
 ## Testing
 

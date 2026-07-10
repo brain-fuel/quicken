@@ -6,8 +6,13 @@
 // JavaScript disabled. A ClientFetch transport fetches each region after
 // load, and a LiveChannel transport keeps a region live over a WebSocket
 // (falling back to HTTP long-poll), pushing fine-grained patches as its
-// server-held state changes. Later phases add more authoring adapters behind
-// the same Region and Transport seams.
+// server-held state changes.
+//
+// A page's shell can be authored as a Go function over a Frame (the
+// func-registry style), as an HTML marker document parsed by FromMarkup, or
+// as an html/template rendered with the funcs from Helpers and then passed to
+// FromMarkup. All three styles produce the same Page, so a transport serves
+// them identically regardless of how the shell was written.
 //
 // Two limitations apply to the LiveChannel transport in this release. The
 // built-in session store keeps every session in memory and never evicts one,
