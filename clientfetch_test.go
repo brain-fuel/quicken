@@ -64,7 +64,9 @@ func TestClientFetchRoutesRenderIndividualRegions(t *testing.T) {
 }
 
 func TestClientFetchRoutePanicIsErrorCard(t *testing.T) {
-	shell := func(f *Frame) template.HTML { return template.HTML("<html><body>" + string(f.Slot("boom")) + "</body></html>") }
+	shell := func(f *Frame) template.HTML {
+		return template.HTML("<html><body>" + string(f.Slot("boom")) + "</body></html>")
+	}
 	p := NewPage(shell).Add(RegionFunc("boom",
 		func(RenderContext) Tree { return Text("sk") },
 		func(RenderContext) Tree { panic("boom") }))

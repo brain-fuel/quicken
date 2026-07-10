@@ -10,6 +10,17 @@ adapters land in later phases.
 
 License: MIT (Copyright (c) 2026 Goforge).
 
+## Install
+
+Requires Go 1.26 or newer.
+
+```sh
+go get github.com/brain-fuel/quicken
+```
+
+The library imports only the standard library; it pulls in no third-party
+runtime dependencies.
+
 ## Usage
 
 ```go
