@@ -42,3 +42,14 @@ func regionPath(name, id string) string {
 	}
 	return regionBase + "/" + name + "/" + id
 }
+
+// regionPrefix is the subtree pattern under which a page's region endpoints
+// live: /_regions/ for an unnamed page, /_regions/<name>/ for a named page. A
+// 404 guard is registered here so an unknown id returns Not Found instead of
+// falling through to a catch-all page handler.
+func regionPrefix(name string) string {
+	if name == "" {
+		return regionBase + "/"
+	}
+	return regionBase + "/" + name + "/"
+}

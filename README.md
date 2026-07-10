@@ -35,6 +35,10 @@ The ClientFetch transport sends a fast shell with skeletons and no region
 content; the client fetches each region from `/_regions/<page>/<id>` after
 load. Mount it with Serve so those endpoints exist:
 
+ClientFetch is a JavaScript enhancement: with scripting disabled the page
+shows only skeletons. Use the default StreamHTML transport when a
+no-JavaScript content floor is required.
+
 ```go
 mux := http.NewServeMux()
 quicken.Mount(mux)

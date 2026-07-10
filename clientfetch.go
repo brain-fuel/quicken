@@ -36,9 +36,11 @@ func (ClientFetch) Deliver(w http.ResponseWriter, r *http.Request, p *Page) erro
 }
 
 // Routes implements RouteProvider: one endpoint per region that renders just
-// that region. Unknown ids are never registered and so return 404 naturally.
+// that region, plus a 404 guard at the region prefix. The exact per-region
+// routes are more specific than the guard, so known ids resolve and unknown
+// ids return Not Found rather than falling through to a catch-all page handler.
 func (ClientFetch) Routes(p *Page) map[string]http.Handler {
-	routes := make(map[string]http.Handler, len(p.order))
+	routes := make(map[string]http.Handler, len(p.order)+1)
 	for _, id := range p.order {
 		region := p.regions[id]
 		routes[regionPath(p.name, id)] = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -47,6 +49,7 @@ func (ClientFetch) Routes(p *Page) map[string]http.Handler {
 			_, _ = io.WriteString(w, renderRegion(region, ctx))
 		})
 	}
+	routes[regionPrefix(p.name)] = http.NotFoundHandler()
 	return routes
 }
 

@@ -46,8 +46,8 @@ func TestClientFetchDeliverHasSkeletonsAndManifestButNoContent(t *testing.T) {
 
 func TestClientFetchRoutesRenderIndividualRegions(t *testing.T) {
 	routes := (ClientFetch{}).Routes(cfPage("demo"))
-	if len(routes) != 2 {
-		t.Fatalf("routes = %d, want 2", len(routes))
+	if len(routes) != 3 {
+		t.Fatalf("routes = %d, want 3 (2 regions + 404 guard)", len(routes))
 	}
 	h, ok := routes["/_regions/demo/alpha"]
 	if !ok {
@@ -104,6 +104,31 @@ func TestClientFetchEndToEndViaServe(t *testing.T) {
 	mux.ServeHTTP(rec2, httptest.NewRequest(http.MethodGet, "/_regions/demo/beta", nil))
 	if !strings.Contains(rec2.Body.String(), "BETA CONTENT") {
 		t.Fatalf("served region body = %q", rec2.Body.String())
+	}
+}
+
+func TestClientFetchUnknownIdReturns404Named(t *testing.T) {
+	mux := http.NewServeMux()
+	Serve(mux, "/", cfPage("demo"), ClientFetch{})
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/_regions/demo/nope", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown named id status = %d, want 404", rec.Code)
+	}
+	rec2 := httptest.NewRecorder()
+	mux.ServeHTTP(rec2, httptest.NewRequest(http.MethodGet, "/_regions/demo/alpha", nil))
+	if !strings.Contains(rec2.Body.String(), "ALPHA CONTENT") {
+		t.Fatalf("known id broke after guard: %q", rec2.Body.String())
+	}
+}
+
+func TestClientFetchUnknownIdReturns404Unnamed(t *testing.T) {
+	mux := http.NewServeMux()
+	Serve(mux, "/", cfPage(""), ClientFetch{})
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/_regions/nope", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown unnamed id status = %d, want 404", rec.Code)
 	}
 }
 
