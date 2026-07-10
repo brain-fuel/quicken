@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/brain-fuel/quicken"
 	"github.com/chromedp/chromedp"
+	"goforge.dev/quicken"
 )
 
 // TestClientFetchInBrowser loads a ClientFetch page in a real browser and

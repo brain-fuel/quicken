@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/brain-fuel/quicken"
 	"github.com/chromedp/chromedp"
+	"goforge.dev/quicken"
 )
 
 // e2eLiveCounter is a small LiveRegion for the live browser e2e: its state is

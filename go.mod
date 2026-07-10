@@ -1,4 +1,4 @@
-module github.com/brain-fuel/quicken
+module goforge.dev/quicken
 
 go 1.26
 
