@@ -70,7 +70,7 @@ func (lc LiveChannel) Deliver(w http.ResponseWriter, r *http.Request, p *Page) e
 			return err
 		}
 		tree := lr.Render(st)
-		sess.set(lr.ID(), &regionState{state: st, lastDynamics: tree.dynamics})
+		sess.set(lr.ID(), &regionState{state: st, lastStatics: tree.statics, lastDynamics: tree.dynamics})
 		ids = append(ids, lr.ID())
 	}
 	lc.store().Put(token, sess)
@@ -137,11 +137,21 @@ func (lc LiveChannel) serve(conn *wsConn, p *Page, ctx RenderContext) {
 	}
 	for _, lr := range p.liveRegions() {
 		var tree Tree
+		var renderOK bool
 		found := sess.withRegion(lr.ID(), func(rs *regionState) {
-			tree = lr.Render(rs.state)
-			rs.lastDynamics = tree.dynamics
+			tree, renderOK = safeRender(lr, rs.state)
+			if renderOK {
+				rs.lastStatics = tree.statics
+				rs.lastDynamics = tree.dynamics
+			}
 		})
 		if !found {
+			continue
+		}
+		if !renderOK {
+			if err := lc.send(conn, errorMsg(lr.ID(), "region panicked")); err != nil {
+				return
+			}
 			continue
 		}
 		if err := lc.send(conn, firstMsg(lr.ID(), tree)); err != nil {
@@ -191,18 +201,30 @@ func (lc LiveChannel) applyEvent(lr LiveRegion, ctx RenderContext, rs *regionSta
 		return errorMsg(m.Region, err.Error())
 	}
 	tree := lr.Render(newState)
-
-	if len(rs.lastDynamics) != len(tree.dynamics) {
-		rs.state = newState
-		rs.lastDynamics = tree.dynamics
+	prev := Tree{statics: rs.lastStatics, dynamics: rs.lastDynamics}
+	changed, full := tree.Diff(prev)
+	rs.state = newState
+	rs.lastStatics = tree.statics
+	rs.lastDynamics = tree.dynamics
+	if full {
 		return fullMsg(m.Region, tree)
 	}
-
-	prev := Tree{statics: tree.statics, dynamics: rs.lastDynamics}
-	changed, _ := tree.Diff(prev)
-	rs.state = newState
-	rs.lastDynamics = tree.dynamics
 	return patchMsg(m.Region, changed)
+}
+
+// safeRender renders a region, converting a panic into ok=false so the caller
+// can emit an error message instead of dropping the connection. It exists
+// because the WS resume loop and the long-poll first-send loop both call
+// Render before any event has occurred, outside applyEvent's own panic
+// recovery, and a panicking first render should not tear down the whole
+// connection or poll.
+func safeRender(lr LiveRegion, s State) (t Tree, ok bool) {
+	defer func() {
+		if recover() != nil {
+			ok = false
+		}
+	}()
+	return lr.Render(s), true
 }
 
 func (lc LiveChannel) send(conn *wsConn, m serverMsg) error {

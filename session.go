@@ -7,10 +7,14 @@ import (
 )
 
 // regionState is a live region's memory on one connection: its opaque State
-// and the dynamic slot values last sent to the client, which the diff compares
-// against.
+// and the statics and dynamic slot values last sent to the client, which the
+// diff compares against. Both must be kept together: a render can change
+// static content at the same dynamic-slot count (for example a class toggle
+// on an otherwise unchanged element), and diffing only the dynamics would
+// miss that change and leave the client with stale statics forever.
 type regionState struct {
 	state        State
+	lastStatics  []string
 	lastDynamics []string
 }
 

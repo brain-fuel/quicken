@@ -317,6 +317,47 @@ func TestLongPollFirstSendDrainsStaleOutboxMessages(t *testing.T) {
 	}
 }
 
+// TestLongPollFirstSendRenderPanicSendsErrorAndSurvives is the long-poll
+// counterpart of the WS resume panic-recovery test: the first poll's
+// per-region enqueue loop must convert a panicking Render into an "error"
+// message for that region instead of letting the panic escape the handler,
+// and the well-behaved region alongside it must still get its "first".
+func TestLongPollFirstSendRenderPanicSendsErrorAndSurvives(t *testing.T) {
+	var calls int32
+	page := NewPage(func(f *Frame) template.HTML {
+		return template.HTML("<html><body>" + string(f.Slot("p")) + string(f.Slot("c")) + "</body></html>")
+	}).Named("demo").
+		AddLive(panickyFirstRender{id: "p", calls: &calls}).
+		AddLive(counter{id: "c"})
+	mux := http.NewServeMux()
+	Serve(mux, "/", page, LiveChannel{})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	resp, _ := http.Get(srv.URL + "/")
+	token := manifestToken(t, readAll(t, resp))
+
+	pr, err := http.Get(srv.URL + livePollPath("demo") + "?token=" + token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m serverMsg
+	json.Unmarshal([]byte(readAll(t, pr)), &m)
+	if m.Type != "error" || m.Region != "p" {
+		t.Fatalf("first poll = %+v, want an error for the panicking region", m)
+	}
+
+	pr2, err := http.Get(srv.URL + livePollPath("demo") + "?token=" + token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m2 serverMsg
+	json.Unmarshal([]byte(readAll(t, pr2)), &m2)
+	if m2.Type != "first" || m2.Region != "c" {
+		t.Fatalf("second poll = %+v, want a normal first for the well-behaved region", m2)
+	}
+}
+
 // manyCounterIDs returns n distinct live-region ids, used to build a page
 // with more live regions than the outbox's fixed 32-slot capacity.
 func manyCounterIDs(n int) []string {

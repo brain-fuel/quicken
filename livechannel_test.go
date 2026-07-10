@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -521,9 +522,75 @@ func TestLiveChannelEventPanicRecovered(t *testing.T) {
 	}
 }
 
+// panickyFirstRender behaves like counter, but its Render panics starting
+// from the SECOND call: Deliver's own Mount+Render (the first call) seeds the
+// session normally, so the panic is reserved for the WS resume loop's
+// re-render, exercising safeRender's recovery in serve rather than any
+// recovery in Deliver (which has none).
+type panickyFirstRender struct {
+	id    string
+	calls *int32
+}
+
+func (p panickyFirstRender) ID() string                                 { return p.id }
+func (p panickyFirstRender) Skeleton(RenderContext) Tree                { return Text("...") }
+func (p panickyFirstRender) Mount(RenderContext, Params) (State, error) { return 0, nil }
+func (p panickyFirstRender) HandleEvent(_ RenderContext, _ string, _ Payload, s State) (State, error) {
+	return s, nil
+}
+func (p panickyFirstRender) Render(s State) Tree {
+	if atomic.AddInt32(p.calls, 1) > 1 {
+		panic("kaboom on render")
+	}
+	return Slots([]string{`<b>`, `</b>`}, []string{"0"})
+}
+
+func TestLiveChannelResumeRenderPanicSendsErrorAndSurvives(t *testing.T) {
+	var calls int32
+	page := NewPage(func(f *Frame) template.HTML {
+		return template.HTML("<html><body>" + string(f.Slot("p")) + string(f.Slot("c")) + "</body></html>")
+	}).Named("demo").
+		AddLive(panickyFirstRender{id: "p", calls: &calls}).
+		AddLive(counter{id: "c"})
+	mux := http.NewServeMux()
+	Serve(mux, "/", page, LiveChannel{})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	resp, _ := http.Get(srv.URL + "/")
+	token := manifestToken(t, readAll(t, resp))
+	conn, br := dialWS(t, srv, liveWSPath("demo"))
+	defer conn.Close()
+	writeClientFrame(conn, opText, mustJSON(clientMsg{Type: "resume", Token: token}))
+
+	// The panicking region "p" is mounted first (live regions render in the
+	// order added), so its resume-render panics and must produce an "error"
+	// message for that region rather than dropping the connection.
+	var m1 serverMsg
+	if err := json.Unmarshal(readServerText(t, br), &m1); err != nil {
+		t.Fatal(err)
+	}
+	if m1.Type != "error" || m1.Region != "p" {
+		t.Fatalf("first region msg = %+v, want an error for the panicking region", m1)
+	}
+
+	// The connection and the loop over regions must both survive: the second,
+	// well-behaved region "c" still gets its normal "first" message.
+	var m2 serverMsg
+	if err := json.Unmarshal(readServerText(t, br), &m2); err != nil {
+		t.Fatal(err)
+	}
+	if m2.Type != "first" || m2.Region != "c" {
+		t.Fatalf("second region msg = %+v, want a normal first for the well-behaved region", m2)
+	}
+}
+
 // shapeShifter changes its DYNAMIC SLOT COUNT (not just content) between
-// renders, to exercise applyEvent's explicit diff-length guard: the region
-// starts with one dynamic slot and a "grow" event moves it to two.
+// renders, to exercise applyEvent's full-replace path when the slot count
+// changes: the region starts with one dynamic slot and a "grow" event moves
+// it to two. A slot-count change always changes len(statics) too (Tree
+// invariant: len(statics) == len(dynamics)+1), so Tree.Diff's sameStatics
+// check catches this on its own; there is no separate length guard anymore.
 type shapeShifter struct{ id string }
 
 func (s shapeShifter) ID() string                                 { return s.id }
@@ -542,7 +609,7 @@ func (s shapeShifter) Render(st State) Tree {
 	return Slots([]string{`<a>`, `</a>`, `</a>`}, []string{"one", "two"})
 }
 
-func TestLiveChannelEventShapeChangeSendsFullViaLengthGuard(t *testing.T) {
+func TestLiveChannelEventShapeChangeSendsFullViaDiff(t *testing.T) {
 	page := NewPage(func(f *Frame) template.HTML {
 		return template.HTML("<html><body>" + string(f.Slot("s")) + "</body></html>")
 	}).Named("demo").AddLive(shapeShifter{id: "s"})
@@ -565,6 +632,63 @@ func TestLiveChannelEventShapeChangeSendsFullViaLengthGuard(t *testing.T) {
 	}
 	if m.Type != "full" || len(m.Dynamics) != 2 || m.Dynamics[1] != "two" {
 		t.Fatalf("full msg = %+v, want a full replace with 2 dynamics", m)
+	}
+}
+
+// staticToggler keeps the SAME dynamic slot count across renders but changes
+// a STATIC string (an "off"/"on" class on the wrapping element) depending on
+// state. This is the regression FIX 1 closes: diffing dynamics alone, using
+// the new tree's own statics as "prev", could never notice the static change,
+// so the client kept a stale class forever. Diffing against the stored
+// PREVIOUS statics must see the mismatch and force a full replace.
+type staticToggler struct{ id string }
+
+func (s staticToggler) ID() string                                 { return s.id }
+func (s staticToggler) Skeleton(RenderContext) Tree                { return Text("...") }
+func (s staticToggler) Mount(RenderContext, Params) (State, error) { return 0, nil }
+func (s staticToggler) HandleEvent(_ RenderContext, name string, _ Payload, st State) (State, error) {
+	if name == "toggle" {
+		return 1, nil
+	}
+	return st, nil
+}
+func (s staticToggler) Render(st State) Tree {
+	if st.(int) == 0 {
+		return Slots([]string{`<i class="off">`, `</i>`}, []string{"x"})
+	}
+	return Slots([]string{`<i class="on">`, `</i>`}, []string{"x"})
+}
+
+func TestLiveChannelEventStaticOnlyChangeSendsFullNotPatch(t *testing.T) {
+	page := NewPage(func(f *Frame) template.HTML {
+		return template.HTML("<html><body>" + string(f.Slot("t")) + "</body></html>")
+	}).Named("demo").AddLive(staticToggler{id: "t"})
+	mux := http.NewServeMux()
+	Serve(mux, "/", page, LiveChannel{})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	resp, _ := http.Get(srv.URL + "/")
+	token := manifestToken(t, readAll(t, resp))
+	conn, br := dialWS(t, srv, liveWSPath("demo"))
+	defer conn.Close()
+	writeClientFrame(conn, opText, mustJSON(clientMsg{Type: "resume", Token: token}))
+	readServerText(t, br) // first: class "off", one dynamic slot ("x")
+
+	writeClientFrame(conn, opText, mustJSON(clientMsg{Type: "event", Region: "t", Event: "toggle"}))
+	var m serverMsg
+	if err := json.Unmarshal(readServerText(t, br), &m); err != nil {
+		t.Fatal(err)
+	}
+	// Same dynamic-slot count ("x" both times) but the static class flipped
+	// off->on: the server must send a "full" carrying the new statics, not a
+	// "patch" (which would leave the client's stale "off" class in place
+	// forever, since a patch never touches statics).
+	if m.Type != "full" {
+		t.Fatalf("msg = %+v, want type \"full\" for a static-only change", m)
+	}
+	if len(m.Statics) != 2 || m.Statics[0] != `<i class="on">` {
+		t.Fatalf("full msg statics = %v, want the new [\"<i class=\\\"on\\\">\", \"</i>\"]", m.Statics)
 	}
 }
 

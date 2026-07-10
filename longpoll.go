@@ -67,7 +67,12 @@ func (lc LiveChannel) pollHandler(p *Page) http.Handler {
 			for _, lr := range p.liveRegions() {
 				var fm serverMsg
 				ok := sess.withRegion(lr.ID(), func(rs *regionState) {
-					fm = firstMsg(lr.ID(), Tree{statics: lr.Render(rs.state).statics, dynamics: rs.lastDynamics})
+					tree, renderOK := safeRender(lr, rs.state)
+					if !renderOK {
+						fm = errorMsg(lr.ID(), "region panicked")
+						return
+					}
+					fm = firstMsg(lr.ID(), Tree{statics: tree.statics, dynamics: rs.lastDynamics})
 				})
 				if ok {
 					select {

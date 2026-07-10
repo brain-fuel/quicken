@@ -43,12 +43,6 @@ func decodeClient(b []byte) (clientMsg, error) {
 // encodeServer serializes a serverMsg for sending on the wire.
 func encodeServer(m serverMsg) ([]byte, error) { return json.Marshal(m) }
 
-// treeStatics exposes a Tree's statics to the wire layer.
-func treeStatics(t Tree) []string { return t.statics }
-
-// treeDynamics exposes a Tree's dynamics to the wire layer.
-func treeDynamics(t Tree) []string { return t.dynamics }
-
 // firstMsg builds the initial message for a region: its full statics and
 // dynamics, sent once when a client attaches.
 func firstMsg(region string, t Tree) serverMsg {
@@ -72,7 +66,9 @@ func errorMsg(region, message string) serverMsg {
 }
 
 // renderLiveHTML stitches a Tree, wrapping each dynamic slot in a marker
-// element the client can address by index when applying a patch.
+// element the client can address by index when applying a patch. It is kept
+// as the conformance oracle the client's stitchLive is checked against; it is
+// not called on the server hot path.
 func renderLiveHTML(t Tree) string {
 	if len(t.dynamics) == 0 {
 		if len(t.statics) == 0 {

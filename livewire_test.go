@@ -104,16 +104,6 @@ func TestEncodeServerChangedKeysAreStrings(t *testing.T) {
 	}
 }
 
-func TestTreeStaticsAndDynamicsAccessors(t *testing.T) {
-	tr := Slots([]string{"<b>", "</b>"}, []string{"7"})
-	if s := treeStatics(tr); len(s) != 2 || s[0] != "<b>" || s[1] != "</b>" {
-		t.Fatalf("treeStatics = %v", s)
-	}
-	if d := treeDynamics(tr); len(d) != 1 || d[0] != "7" {
-		t.Fatalf("treeDynamics = %v", d)
-	}
-}
-
 func TestRenderLiveHTMLWrapsDynamics(t *testing.T) {
 	tr := Slots([]string{"<p>", "!</p>"}, []string{"hi"})
 	got := renderLiveHTML(tr)
