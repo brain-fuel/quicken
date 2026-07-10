@@ -95,6 +95,21 @@ shows its skeleton and nothing more, since there is no socket to carry state
 or events. When a no-JavaScript content floor is required, use the default
 StreamHTML transport instead.
 
+### Production notes
+
+Two limitations apply to LiveChannel in this release:
+
+- The built-in in-memory session store never evicts a session, so every page
+  load adds a `LiveSession` that lives for the process lifetime. This is fine
+  for development and small deployments, but for production supply a bounded
+  `SessionStore` (the interface is the seam for a TTL or LRU store). A tracked
+  follow-up will add an evicting default.
+- The WebSocket upgrade does not check the `Origin` header. An application that
+  needs cross-site request protection should validate `Origin` itself before
+  upgrading. Note that driving a live region already requires the unguessable
+  per-session resume token embedded in the page, so an event cannot be injected
+  without first reading that page.
+
 ## Testing
 
 The library code is standard-library only; chromedp is a test-time dependency
