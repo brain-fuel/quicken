@@ -4,7 +4,7 @@ go 1.26
 
 require (
 	github.com/chromedp/chromedp v0.15.1
-	goforge.dev/cadence v0.1.0
+	goforge.dev/cadence v0.1.1
 )
 
 require (
