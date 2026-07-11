@@ -1,15 +1,24 @@
 package quicken
 
 import (
+	"flag"
 	"html/template"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
 
 	"goforge.dev/cadence"
 )
+
+// update regenerates golden files (testdata/*.golden.html) from the current
+// output when set: `go test -run TestMixedStrategyGolden -update`. No golden
+// convention existed in this package before this test; this is the minimal
+// one, introduced here.
+var update = flag.Bool("update", false, "update golden files")
 
 func textRegion(id, body string) Region {
 	return cadence.RegionFunc(id,
@@ -116,6 +125,48 @@ func TestServeCompositeMixedStrategies(t *testing.T) {
 	}
 	if !strings.Contains(body, `>HOT</div>`) || !strings.Contains(body, `>COLD</div>`) {
 		t.Error("region content missing from floor (M1: server always renders every region)")
+	}
+}
+
+// TestMixedStrategyGolden pins the exact bytes of a composite floor with all
+// three SP2-supported strategy shapes side by side: Eager, Deferred{Server,
+// OnVisible}, Deferred{Server,OnHover}. Regenerate with:
+//
+//	go test -run TestMixedStrategyGolden -update
+func TestMixedStrategyGolden(t *testing.T) {
+	p := NewPage(func(f *Frame) template.HTML {
+		return template.HTML("<html><head>" + string(f.Head()) + "</head><body>" +
+			string(f.Slot("eager")) + string(f.Slot("vis")) + string(f.Slot("hov")) +
+			"</body></html>")
+	})
+	p.Add(textRegion("eager", "EAGER-CONTENT")).
+		Add(textRegion("vis", "VISIBLE-CONTENT")).
+		Add(textRegion("hov", "HOVER-CONTENT"))
+
+	pol := cadence.Fixed(map[string]cadence.Strategy{
+		"eager": {Kind: cadence.Eager},
+		"vis":   {Kind: cadence.Deferred, Where: cadence.Server, On: cadence.OnVisible},
+		"hov":   {Kind: cadence.Deferred, Where: cadence.Server, On: cadence.OnHover},
+	})
+	mux := http.NewServeMux()
+	Serve(mux, "/", p, pol)
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+	body := rec.Body.String()
+
+	golden := filepath.Join("testdata", "mixed_floor.golden.html")
+	if *update {
+		if err := os.WriteFile(golden, []byte(body), 0o644); err != nil {
+			t.Fatalf("write golden: %v", err)
+		}
+	}
+	want, err := os.ReadFile(golden)
+	if err != nil {
+		t.Fatalf("read golden (run with -update to generate it): %v", err)
+	}
+	if body != string(want) {
+		t.Errorf("mixed-strategy floor mismatch (run with -update to regenerate):\ngot:\n%s\nwant:\n%s", body, want)
 	}
 }
 
