@@ -12,6 +12,13 @@ server-held state over a WebSocket (with an HTTP long-poll fallback). The
 markup marker document and html/template helper authoring adapters have landed;
 explorer integration remains for a later phase.
 
+Because the floor always ships every region's real content, SP2 governs *when
+and how the client reveals* that content, not *whether the server computes it*:
+first paint is fast, but the server still renders every region. True
+compute-skip (never rendering an off-screen region) requires a client that
+computes from shipped data, and lands with the `cadence` TEA interpreter in a
+later phase (SP3) as an explicit opt-out of the no-JS floor.
+
 License: MIT (Copyright (c) 2026 Goforge).
 
 ## Install
@@ -19,7 +26,7 @@ License: MIT (Copyright (c) 2026 Goforge).
 Requires Go 1.26 or newer.
 
 ```sh
-go get github.com/brain-fuel/quicken
+go get goforge.dev/quicken
 ```
 
 The library imports only the standard library; it pulls in no third-party
