@@ -116,3 +116,25 @@ func tagOf(s cadence.Strategy) fillTag {
 		return fillTag{Strategy: "deferred", Trigger: trig}
 	}
 }
+
+// serveComposite mounts a page on mux at path. Each request resolves every
+// region's cadence.Strategy from pol (nil pol = kind-inferred default) and
+// streams the universal floor: shell + skeletons first, then every region's
+// full content tagged with its strategy so the client shim reveals it
+// accordingly. With scripting off the floor is the page. (Exposed as the
+// public Serve at the Task 6 cutover; live wiring added in Task 4.)
+func serveComposite(mux *http.ServeMux, path string, p *Page, pol cadence.Policy) {
+	mux.Handle(path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := cadence.RequestContext{Path: r.URL.Path}
+		resolve := func(id string) fillTag {
+			s, err := strategyFor(p, pol, id, ctx)
+			if err != nil {
+				// SP2-unsupported (Deferred{Client}): degrade to eager so the
+				// floor still shows full content. True client-compute is SP3.
+				return fillTag{Strategy: "eager", Trigger: "onload"}
+			}
+			return tagOf(s)
+		}
+		_ = renderFloor(w, r, p, resolve)
+	}))
+}

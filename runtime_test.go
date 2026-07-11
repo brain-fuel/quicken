@@ -2,6 +2,7 @@ package quicken
 
 import (
 	"html/template"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -82,6 +83,38 @@ func TestTagOfAllBranches(t *testing.T) {
 				t.Errorf("%s: tagOf(%+v) = %+v, want %+v", tc.name, tc.in, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestServeCompositeMixedStrategies(t *testing.T) {
+	p := NewPage(func(f *Frame) template.HTML {
+		return template.HTML("<html><head>" + string(f.Head()) +
+			"</head><body>" + string(f.Slot("hot")) + string(f.Slot("cold")) + "</body></html>")
+	})
+	p.Add(textRegion("hot", "HOT")).Add(textRegion("cold", "COLD"))
+
+	pol := cadence.Fixed(map[string]cadence.Strategy{
+		"hot":  {Kind: cadence.Eager},
+		"cold": {Kind: cadence.Deferred, Where: cadence.Server, On: cadence.OnVisible},
+	})
+	mux := http.NewServeMux()
+	serveComposite(mux, "/", p, pol)
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+	body := rec.Body.String()
+
+	if !strings.Contains(body, `id="q-slot-hot" data-q-slot`) {
+		t.Error("missing hot slot")
+	}
+	if !strings.Contains(body, `data-q-fill="hot" data-q-strategy="eager" data-q-trigger="onload"`) {
+		t.Errorf("hot fill wrong:\n%s", body)
+	}
+	if !strings.Contains(body, `data-q-fill="cold" data-q-strategy="deferred" data-q-trigger="onvisible"`) {
+		t.Errorf("cold fill wrong:\n%s", body)
+	}
+	if !strings.Contains(body, `>HOT</div>`) || !strings.Contains(body, `>COLD</div>`) {
+		t.Error("region content missing from floor (M1: server always renders every region)")
 	}
 }
 
