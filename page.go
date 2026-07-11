@@ -2,7 +2,6 @@ package quicken
 
 import (
 	"html/template"
-	"net/http"
 	"strings"
 )
 
@@ -27,8 +26,8 @@ func NewPage(shell Shell) *Page {
 	return &Page{shell: shell, regions: map[string]Region{}, live: map[string]LiveRegion{}}
 }
 
-// Named sets the page's name, used to namespace its per-region fetch
-// endpoints (see ClientFetch). The name must be empty or of the form
+// Named sets the page's name, used to namespace its live endpoints (the
+// WebSocket, poll, and event routes). The name must be empty or of the form
 // [A-Za-z0-9_-]+; an invalid name panics. Returns the page for chaining.
 func (p *Page) Named(name string) *Page {
 	if name != "" && !validID(name) {
@@ -82,17 +81,6 @@ func (p *Page) liveRegions() []LiveRegion {
 		out = append(out, p.live[id])
 	}
 	return out
-}
-
-// Handler returns an http.Handler that serves the page with the given
-// transport. A nil transport uses StreamHTML.
-func (p *Page) Handler(t Transport) http.Handler {
-	if t == nil {
-		t = StreamHTML{}
-	}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = t.Deliver(w, r, p)
-	})
 }
 
 // Frame is handed to a Shell so it can place region skeletons and the shim.

@@ -9,7 +9,11 @@ import (
 
 // LiveChannel is the live transport: a WebSocket carries the first render and
 // every subsequent fine-grained patch. A zero value uses a process-wide
-// in-memory session store; set Store to supply your own.
+// in-memory session store that never evicts a session; set Store to supply
+// your own bounded (TTL or LRU) store for production. Serve builds and owns
+// the LiveChannel for a page; callers configure it through Serve's
+// WithSessionStore and WithPollTimeout options rather than constructing a
+// LiveChannel directly.
 //
 // pollTimeout controls how long the long-poll GET endpoint blocks waiting for
 // the next queued message before responding 204. Zero means a default (see
@@ -49,56 +53,30 @@ func liveWSPath(name string) string {
 	return liveBasePath(name) + "/ws"
 }
 
-// Deliver renders the shell with skeletons and a live manifest, mints a
-// session, and mounts every live region so its state is ready when the socket
-// connects. It does not stream any region's live HTML: the client renders
-// "first" messages received over the socket, and the skeleton already in the
-// document is the JS-off floor.
-func (lc LiveChannel) Deliver(w http.ResponseWriter, r *http.Request, p *Page) error {
-	ctx := RenderContext{Ctx: r.Context(), R: r}
-	token, err := newToken()
-	if err != nil {
-		http.Error(w, "session error", http.StatusInternalServerError)
-		return err
-	}
-	sess := &LiveSession{regions: map[string]*regionState{}, outbox: make(chan serverMsg, 32)}
-	ids := make([]string, 0, len(p.liveRegions()))
-	for _, lr := range p.liveRegions() {
-		st, err := lr.Mount(ctx, nil)
-		if err != nil {
-			http.Error(w, "mount error", http.StatusInternalServerError)
-			return err
-		}
-		tree := lr.Render(st)
-		sess.set(lr.ID(), &regionState{state: st, lastStatics: tree.Statics(), lastDynamics: tree.Dynamics()})
-		ids = append(ids, lr.ID())
-	}
-	lc.store().Put(token, sess)
-
-	doc := string(p.shell(&Frame{page: p, ctx: ctx}))
-	head, tail := splitBody(doc)
+// liveManifestJSON builds the live manifest the client shim reads to resume a
+// session: the WebSocket path, the resume token, and every live region id, as
+// a `<script type="application/json" data-q-live>` element. It is the single
+// place this payload is produced, so the manifest a page load embeds always
+// matches the routes Serve mounts.
+func liveManifestJSON(p *Page, token string) string {
+	ids := make([]string, 0, len(p.liveOrder))
+	ids = append(ids, p.liveOrder...)
 	manifest, err := json.Marshal(map[string]any{
 		"ws":    liveWSPath(p.name),
 		"token": token,
 		"ids":   ids,
 	})
 	if err != nil {
-		return err
+		// p.liveOrder is a []string and token is a string: this cannot fail.
+		manifest = []byte(`{}`)
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if _, err := w.Write([]byte(head)); err != nil {
-		return err
-	}
-	if _, err := w.Write([]byte(`<script type="application/json" data-q-live>` + string(manifest) + `</script>`)); err != nil {
-		return err
-	}
-	_, err = w.Write([]byte(tail))
-	return err
+	return `<script type="application/json" data-q-live>` + string(manifest) + `</script>`
 }
 
-// Routes mounts the WebSocket endpoint and the long-poll fallback endpoints
-// for this page.
-func (lc LiveChannel) Routes(p *Page) map[string]http.Handler {
+// liveRoutes builds the WebSocket endpoint and the long-poll fallback
+// endpoints for this page. Serve mounts these alongside the page whenever the
+// page has live regions.
+func (lc LiveChannel) liveRoutes(p *Page) map[string]http.Handler {
 	return map[string]http.Handler{
 		liveWSPath(p.name):    lc.wsHandler(p),
 		livePollPath(p.name):  lc.pollHandler(p),

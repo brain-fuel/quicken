@@ -1,17 +1,12 @@
 // quicken client shim.
 //
-// swap: moves a streamed fill block (from the StreamHTML transport) into its
-// slot. With scripting off those fill blocks stay visible at the end of the
-// document, so the page is still readable; swap only relocates them.
+// swap: moves a streamed fill block (from Serve's floor) into its slot. With
+// scripting off those fill blocks stay visible at the end of the document, so
+// the page is still readable; swap only relocates them.
 //
-// fetch runtime: for the ClientFetch transport, load(url) fetches a region's
-// HTML once and memoizes it by url; fetchRegion fills a slot from it; init
-// reads the page manifest and fetches every region. The url-keyed cache is
-// shared with prefetch (see wirePrefetch), so a prefetched url makes the later
-// fetch instant.
+// reveal: dispatches a fill's swap by its declared strategy/trigger. init
+// reveals every fill on load, then hands live regions to the live client.
 (function () {
-  var cache = {};
-
   function swap(id) {
     var fill = document.querySelector('[data-q-fill="' + id + '"]');
     var slot = document.getElementById('q-slot-' + id);
@@ -29,51 +24,58 @@
     slot.removeAttribute('data-q-pending');
   }
 
-  function load(url) {
-    if (!cache[url]) {
-      cache[url] = fetch(url).then(function (r) { return r.text(); });
-    }
-    return cache[url];
+  // reveal: dispatches a streamed fill's swap by its declared strategy/
+  // trigger (data-q-strategy/data-q-trigger, set by Serve's tail stream).
+  // eager and onload swap immediately; onvisible defers behind an
+  // IntersectionObserver on the slot; onhover defers behind a mouseover/
+  // focusin listener on the slot; live is a no-op (the live client owns that
+  // fill via the WebSocket/poll transport, not the fill/swap path). Guarded
+  // by `revealed` so a fill is swapped at most once no matter how many times
+  // reveal or its deferred trigger fires.
+  var revealed = {};
+
+  function fillOf(id) {
+    return document.querySelector('[data-q-fill="' + id + '"]');
   }
 
-  function regionURL(base, page, id) {
-    return page ? base + '/' + page + '/' + id : base + '/' + id;
+  function revealNow(id) {
+    if (revealed[id]) return;
+    revealed[id] = true;
+    swap(id);
   }
 
-  function fetchRegion(id, url) {
-    return load(url).then(function (html) {
-      fillSlotHTML(id, html);
-    }).catch(function () {
-      fillSlotHTML(id, '<div data-q-error>region failed to load</div>');
-    });
-  }
-
-  function prefetch(url) {
-    load(url);
-  }
-
-  function wirePrefetch() {
-    var nodes = document.querySelectorAll('[data-q-prefetch]');
-    for (var i = 0; i < nodes.length; i++) {
-      (function (el) {
-        var url = el.getAttribute('data-q-prefetch');
-        var on = el.getAttribute('data-q-prefetch-on') || 'mouseover';
-        if (on === 'visible') {
-          if (typeof IntersectionObserver !== 'undefined') {
-            var io = new IntersectionObserver(function (entries) {
-              for (var j = 0; j < entries.length; j++) {
-                if (entries[j].isIntersecting) { prefetch(url); io.disconnect(); }
-              }
-            });
-            io.observe(el);
-          } else {
-            prefetch(url);
+  function reveal(id) {
+    var fill = fillOf(id);
+    if (!fill) return;
+    var strat = fill.getAttribute('data-q-strategy');
+    var trig = fill.getAttribute('data-q-trigger');
+    if (strat === 'live') return;
+    if (trig === 'onvisible') {
+      var slot = document.getElementById('q-slot-' + id);
+      if (slot && typeof IntersectionObserver !== 'undefined') {
+        var io = new IntersectionObserver(function (entries) {
+          for (var i = 0; i < entries.length; i++) {
+            if (entries[i].isIntersecting) { revealNow(id); io.disconnect(); return; }
           }
-        } else {
-          el.addEventListener(on, function () { prefetch(url); }, { once: true });
-        }
-      })(nodes[i]);
+        });
+        io.observe(slot);
+        return;
+      }
+      revealNow(id);
+      return;
     }
+    if (trig === 'onhover') {
+      var slotH = document.getElementById('q-slot-' + id);
+      if (slotH) {
+        var fire = function () { revealNow(id); };
+        slotH.addEventListener('mouseover', fire, { once: true });
+        slotH.addEventListener('focusin', fire, { once: true });
+        return;
+      }
+      revealNow(id);
+      return;
+    }
+    revealNow(id);
   }
 
   // Live client: reads the page's live manifest (a <script type=
@@ -174,7 +176,18 @@
     }
   }
 
+  // swapLiveSnapshots moves each live region's server-rendered first snapshot
+  // (streamed into the floor as a fill tagged data-q-strategy="live", which
+  // reveal deliberately leaves in place) into its slot before the transport
+  // opens, so the region shows real content immediately instead of flashing
+  // its skeleton until the first socket/poll message lands.
+  function swapLiveSnapshots(manifest) {
+    var ids = manifest.ids || [];
+    for (var i = 0; i < ids.length; i++) swap(ids[i]);
+  }
+
   function connectLive(manifest) {
+    swapLiveSnapshots(manifest);
     if (typeof WebSocket === 'undefined') { pollLive(manifest); return; }
     var proto = (location.protocol === 'https:') ? 'wss://' : 'ws://';
     var ws;
@@ -192,6 +205,7 @@
   }
 
   function pollLive(manifest) {
+    swapLiveSnapshots(manifest);
     // The ws path is a sibling of poll and event, not a parent of them: for
     // a named page "demo" the server mounts /_live/demo/ws, /_live/demo/poll,
     // and /_live/demo/event (unnamed: /_live/ws, /_live/poll, /_live/event).
@@ -233,30 +247,17 @@
   }
 
   function init() {
-    var m = document.querySelector('[data-q-manifest]');
-    if (m) {
-      var man = JSON.parse(m.textContent);
-      var base = man.base, page = man.page, ids = man.ids || [];
-      for (var i = 0; i < ids.length; i++) {
-        fetchRegion(ids[i], regionURL(base, page, ids[i]));
-      }
-    }
     var fills = document.querySelectorAll('[data-q-fill]');
     for (var j = 0; j < fills.length; j++) {
-      swap(fills[j].getAttribute('data-q-fill'));
+      reveal(fills[j].getAttribute('data-q-fill'));
     }
-    wirePrefetch();
     initLive();
   }
 
   window.__quicken = {
     swap: swap,
     fillSlotHTML: fillSlotHTML,
-    load: load,
-    regionURL: regionURL,
-    fetchRegion: fetchRegion,
-    prefetch: prefetch,
-    wirePrefetch: wirePrefetch,
+    reveal: reveal,
     init: init,
     applyFirst: applyFirst,
     applyFull: applyFull,

@@ -14,12 +14,41 @@ import (
 
 const shortTimeout = 50 * time.Millisecond
 
+// mountLiveSession mounts page's live routes on mux using lc, so a test can
+// configure a Store or pollTimeout the public Serve(Policy) no longer exposes.
+// It mints and stores a resume session exactly as Serve's composite handler
+// does (mount + seed each live region's state) and returns the token, so a
+// poll or event against the returned token behaves as if the floor had just
+// rendered the page.
+func mountLiveSession(t *testing.T, mux *http.ServeMux, lc LiveChannel, page *Page) string {
+	t.Helper()
+	for route, h := range lc.liveRoutes(page) {
+		mux.Handle(route, h)
+	}
+	token, err := newToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess := &LiveSession{regions: map[string]*regionState{}, outbox: make(chan serverMsg, 32)}
+	ctx := RenderContext{}
+	for _, lr := range page.liveRegions() {
+		st, err := lr.Mount(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tree := lr.Render(st)
+		sess.set(lr.ID(), &regionState{state: st, lastStatics: tree.Statics(), lastDynamics: tree.Dynamics()})
+	}
+	lc.store().Put(token, sess)
+	return token
+}
+
 func TestLongPollFirstThenPatch(t *testing.T) {
 	page := NewPage(func(f *Frame) template.HTML {
 		return template.HTML("<html><body>" + string(f.Slot("c")) + "</body></html>")
 	}).Named("demo").AddLive(counter{id: "c"})
 	mux := http.NewServeMux()
-	Serve(mux, "/", page, LiveChannel{})
+	Serve(mux, "/", page, nil)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
@@ -61,11 +90,12 @@ func TestLongPollTimeoutIsNoContent(t *testing.T) {
 		return template.HTML("<html><body>" + string(f.Slot("c")) + "</body></html>")
 	}).Named("demo").AddLive(counter{id: "c"})
 	mux := http.NewServeMux()
-	Serve(mux, "/", page, LiveChannel{pollTimeout: shortTimeout})
+	// A short pollTimeout keeps the "times out to 204" assertion fast; the
+	// public Serve no longer exposes that knob, so mount the live routes with a
+	// configured LiveChannel directly.
+	token := mountLiveSession(t, mux, LiveChannel{pollTimeout: shortTimeout}, page)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
-	resp, _ := http.Get(srv.URL + "/")
-	token := manifestToken(t, readAll(t, resp))
 	// Drain the first message.
 	http.Get(srv.URL + livePollPath("demo") + "?token=" + token)
 	// Second poll has nothing queued and must time out to 204.
@@ -80,7 +110,7 @@ func TestLongPollUnknownTokenIs404(t *testing.T) {
 		return template.HTML("<html><body>" + string(f.Slot("c")) + "</body></html>")
 	}).Named("demo").AddLive(counter{id: "c"})
 	mux := http.NewServeMux()
-	Serve(mux, "/", page, LiveChannel{})
+	Serve(mux, "/", page, nil)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 	pr, _ := http.Get(srv.URL + livePollPath("demo") + "?token=nope")
@@ -96,7 +126,7 @@ func TestLongPollEventUnknownRegionIs404(t *testing.T) {
 		return template.HTML("<html><body>" + string(f.Slot("c")) + "</body></html>")
 	}).Named("demo").AddLive(counter{id: "c"})
 	mux := http.NewServeMux()
-	Serve(mux, "/", page, LiveChannel{})
+	Serve(mux, "/", page, nil)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
@@ -120,7 +150,7 @@ func TestLongPollEventBadBodyIs400(t *testing.T) {
 		return template.HTML("<html><body>" + string(f.Slot("c")) + "</body></html>")
 	}).Named("demo").AddLive(counter{id: "c"})
 	mux := http.NewServeMux()
-	Serve(mux, "/", page, LiveChannel{})
+	Serve(mux, "/", page, nil)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
@@ -140,7 +170,7 @@ func TestLongPollUnnamedPagePath(t *testing.T) {
 		return template.HTML("<html><body>" + string(f.Slot("c")) + "</body></html>")
 	}).AddLive(counter{id: "c"})
 	mux := http.NewServeMux()
-	Serve(mux, "/", page, LiveChannel{})
+	Serve(mux, "/", page, nil)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
@@ -169,7 +199,7 @@ func TestLongPollEventUnknownTokenIs404(t *testing.T) {
 		return template.HTML("<html><body>" + string(f.Slot("c")) + "</body></html>")
 	}).Named("demo").AddLive(counter{id: "c"})
 	mux := http.NewServeMux()
-	Serve(mux, "/", page, LiveChannel{})
+	Serve(mux, "/", page, nil)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
@@ -185,18 +215,18 @@ func TestLongPollEventUnknownTokenIs404(t *testing.T) {
 
 // TestLongPollContextCancelUnblocks confirms a poll blocked on the outbox is
 // released promptly by r.Context().Done() when the client cancels, rather
-// than sitting until pollTimeout. pollTimeout is set well above the client's
-// cancellation deadline, so a fast return here can only be explained by the
-// context branch, not the timeout branch. The deferred srv.Close() also
-// blocks until the handler goroutine actually returns, so a real leak (the
-// handler never noticing cancellation) would hang this test instead of
-// passing silently.
+// than sitting until pollTimeout. The default poll timeout (25s) is far above
+// the client's 30ms cancellation deadline, so a fast return here can only be
+// explained by the context branch, not the timeout branch. The deferred
+// srv.Close() also blocks until the handler goroutine actually returns, so a
+// real leak (the handler never noticing cancellation) would hang this test
+// instead of passing silently.
 func TestLongPollContextCancelUnblocks(t *testing.T) {
 	page := NewPage(func(f *Frame) template.HTML {
 		return template.HTML("<html><body>" + string(f.Slot("c")) + "</body></html>")
 	}).Named("demo").AddLive(counter{id: "c"})
 	mux := http.NewServeMux()
-	Serve(mux, "/", page, LiveChannel{pollTimeout: 2 * time.Second})
+	Serve(mux, "/", page, nil)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
@@ -218,7 +248,7 @@ func TestLongPollContextCancelUnblocks(t *testing.T) {
 		t.Fatal("expected client-side context cancellation error")
 	}
 	if elapsed > 500*time.Millisecond {
-		t.Fatalf("cancellation took %v to unblock, want well under the 2s pollTimeout", elapsed)
+		t.Fatalf("cancellation took %v to unblock, want well under the 25s pollTimeout", elapsed)
 	}
 }
 
@@ -233,7 +263,7 @@ func TestLongPollOutboxDropsOldest(t *testing.T) {
 		return template.HTML("<html><body>" + string(f.Slot("c")) + "</body></html>")
 	}).Named("demo").AddLive(counter{id: "c"})
 	mux := http.NewServeMux()
-	Serve(mux, "/", page, LiveChannel{})
+	Serve(mux, "/", page, nil)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
@@ -279,15 +309,16 @@ func TestLongPollFirstSendDrainsStaleOutboxMessages(t *testing.T) {
 		return template.HTML("<html><body>" + string(f.Slot("c")) + "</body></html>")
 	}).Named("demo").AddLive(counter{id: "c"})
 	mux := http.NewServeMux()
-	lc := LiveChannel{pollTimeout: 2 * time.Second}
-	Serve(mux, "/", page, lc)
+	Serve(mux, "/", page, nil)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
 	resp, _ := http.Get(srv.URL + "/")
 	token := manifestToken(t, readAll(t, resp))
 
-	sess, ok := lc.store().Get(token)
+	// Serve uses the default session store; reach into it for the session the
+	// floor just minted so the outbox can be pre-filled with stale patches.
+	sess, ok := (LiveChannel{}).store().Get(token)
 	if !ok {
 		t.Fatal("session not found")
 	}
@@ -305,7 +336,7 @@ func TestLongPollFirstSendDrainsStaleOutboxMessages(t *testing.T) {
 	}
 	elapsed := time.Since(start)
 	if elapsed > 500*time.Millisecond {
-		t.Fatalf("first poll took %v with a full outbox, want well under the 2s pollTimeout", elapsed)
+		t.Fatalf("first poll took %v with a full outbox, want well under the 25s pollTimeout", elapsed)
 	}
 	var m serverMsg
 	json.Unmarshal([]byte(readAll(t, pr)), &m)
@@ -330,7 +361,7 @@ func TestLongPollFirstSendRenderPanicSendsErrorAndSurvives(t *testing.T) {
 		AddLive(panickyFirstRender{id: "p", calls: &calls}).
 		AddLive(counter{id: "c"})
 	mux := http.NewServeMux()
-	Serve(mux, "/", page, LiveChannel{})
+	Serve(mux, "/", page, nil)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
@@ -376,11 +407,11 @@ func manyCounterIDs(n int) []string {
 // blocking send with no escape: a client disconnect does not release a
 // blocked channel send, so the handler goroutine leaked forever. The fixed
 // enqueue selects on r.Context().Done() too, so a canceled poll returns
-// promptly instead. pollTimeout is set well above the client's cancellation
-// deadline, so a fast return can only be explained by the context branch,
-// not the timeout branch. The deferred srv.Close() blocks until the handler
-// goroutine actually returns, so a real leak would hang this test instead of
-// passing silently.
+// promptly instead. The default poll timeout (25s) is far above the client's
+// 30ms cancellation deadline, so a fast return can only be explained by the
+// context branch, not the timeout branch. The deferred srv.Close() blocks
+// until the handler goroutine actually returns, so a real leak would hang this
+// test instead of passing silently.
 func TestLongPollFirstSendManyRegionsUnblocksOnCancel(t *testing.T) {
 	page := NewPage(func(f *Frame) template.HTML {
 		return template.HTML("<html><body></body></html>")
@@ -389,7 +420,7 @@ func TestLongPollFirstSendManyRegionsUnblocksOnCancel(t *testing.T) {
 		page.AddLive(counter{id: id})
 	}
 	mux := http.NewServeMux()
-	Serve(mux, "/", page, LiveChannel{pollTimeout: 2 * time.Second})
+	Serve(mux, "/", page, nil)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
@@ -409,6 +440,6 @@ func TestLongPollFirstSendManyRegionsUnblocksOnCancel(t *testing.T) {
 		t.Fatal("expected client-side context cancellation error")
 	}
 	if elapsed > 500*time.Millisecond {
-		t.Fatalf("cancellation took %v to unblock with 40 live regions over a 32-slot outbox, want well under the 2s pollTimeout", elapsed)
+		t.Fatalf("cancellation took %v to unblock with 40 live regions over a 32-slot outbox, want well under the 25s pollTimeout", elapsed)
 	}
 }

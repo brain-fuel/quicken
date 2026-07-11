@@ -148,8 +148,7 @@ func TestLiveChannelResumeSendsFirst(t *testing.T) {
 
 	mux := http.NewServeMux()
 	Mount(mux)
-	lc := LiveChannel{}
-	Serve(mux, "/", page, lc)
+	Serve(mux, "/", page, nil)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
@@ -181,7 +180,7 @@ func TestLiveChannelEventProducesPatch(t *testing.T) {
 	}).Named("demo").AddLive(counter{id: "c"})
 	mux := http.NewServeMux()
 	Mount(mux)
-	Serve(mux, "/", page, LiveChannel{})
+	Serve(mux, "/", page, nil)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
@@ -205,7 +204,7 @@ func TestLiveChannelUnknownTokenErrors(t *testing.T) {
 		return template.HTML("<html><body>" + string(f.Slot("c")) + "</body></html>")
 	}).Named("demo").AddLive(counter{id: "c"})
 	mux := http.NewServeMux()
-	Serve(mux, "/", page, LiveChannel{})
+	Serve(mux, "/", page, nil)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 	conn, br := dialWS(t, srv, liveWSPath("demo"))
@@ -226,12 +225,13 @@ func TestLiveChannelResumeUnknownRegionSkipped(t *testing.T) {
 		return template.HTML("<html><body>" + string(f.Slot("c")) + "</body></html>")
 	}).Named("demo").AddLive(counter{id: "c"})
 	mux := http.NewServeMux()
-	store := NewMemoryStore()
-	lc := LiveChannel{Store: store}
-	Serve(mux, "/", page, lc)
+	Serve(mux, "/", page, nil)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
+	// Serve uses the default session store; seed an empty session under a fresh
+	// token directly into it (the public Serve no longer exposes a Store knob).
+	store := (LiveChannel{}).store()
 	token, err := newToken()
 	if err != nil {
 		t.Fatal(err)
@@ -273,7 +273,7 @@ func TestLiveChannelMalformedFirstMessageErrors(t *testing.T) {
 		return template.HTML("<html><body>" + string(f.Slot("c")) + "</body></html>")
 	}).Named("demo").AddLive(counter{id: "c"})
 	mux := http.NewServeMux()
-	Serve(mux, "/", page, LiveChannel{})
+	Serve(mux, "/", page, nil)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 	conn, br := dialWS(t, srv, liveWSPath("demo"))
@@ -291,7 +291,7 @@ func TestLiveChannelEventUnknownEventIsNoop(t *testing.T) {
 		return template.HTML("<html><body>" + string(f.Slot("c")) + "</body></html>")
 	}).Named("demo").AddLive(counter{id: "c"})
 	mux := http.NewServeMux()
-	Serve(mux, "/", page, LiveChannel{})
+	Serve(mux, "/", page, nil)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
@@ -310,19 +310,29 @@ func TestLiveChannelEventUnknownEventIsNoop(t *testing.T) {
 	}
 }
 
-// Deliver writes exactly three chunks (head, manifest script, tail); reusing
-// clientfetch_test.go's cfFailWriter (same test binary, same package) to fail
-// after 0 and 1 successful writes covers both of Deliver's write-error
-// branches, matching the technique already used for ClientFetch.Deliver.
-func TestLiveChannelDeliverPropagatesWriteErrors(t *testing.T) {
+// The live floor (renderFloorAndLive with a live setup) writes head, then each
+// live region's fill, then the manifest, then the tail. Failing the 1st write
+// (head) and the 2nd (the first live region's fill) covers its write-error
+// return branches, the same coverage LiveChannel.Deliver's write-error test
+// used to give before the cutover folded live delivery into the floor.
+func TestRenderFloorAndLivePropagatesWriteErrors(t *testing.T) {
 	page := NewPage(func(f *Frame) template.HTML {
 		return template.HTML("<html><body>" + string(f.Slot("c")) + "</body></html>")
 	}).Named("demo").AddLive(counter{id: "c"})
-	for ok := 0; ok < 2; ok++ {
-		w := &cfFailWriter{ok: ok}
-		err := (LiveChannel{}).Deliver(w, httptest.NewRequest(http.MethodGet, "/", nil), page)
-		if err == nil {
-			t.Fatalf("ok=%d: expected a write error to propagate", ok)
+	for _, failAt := range []int{1, 2} {
+		w := newFailingAfterWriter(failAt)
+		token, err := newToken()
+		if err != nil {
+			t.Fatal(err)
+		}
+		live := &liveSetup{
+			lc:    LiveChannel{},
+			token: token,
+			sess:  &LiveSession{regions: map[string]*regionState{}, outbox: make(chan serverMsg, 32)},
+		}
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		if err := renderFloorAndLive(w, req, page, defaultResolve, live); err == nil {
+			t.Fatalf("failAt=%d: expected a write error to propagate", failAt)
 		}
 	}
 }
@@ -341,7 +351,7 @@ func TestLiveChannelEventUnknownRegionIsNoop(t *testing.T) {
 		return template.HTML("<html><body>" + string(f.Slot("c")) + "</body></html>")
 	}).Named("demo").AddLive(counter{id: "c"})
 	mux := http.NewServeMux()
-	Serve(mux, "/", page, LiveChannel{})
+	Serve(mux, "/", page, nil)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
@@ -364,8 +374,8 @@ func TestLiveChannelEventUnknownRegionIsNoop(t *testing.T) {
 	}
 }
 
-// brokenMount is a LiveRegion whose Mount always fails, to exercise Deliver's
-// mount-error path.
+// brokenMount is a LiveRegion whose Mount always fails, to exercise the
+// floor's live-region mount-error path.
 type brokenMount struct{ id string }
 
 func (b brokenMount) ID() string                  { return b.id }
@@ -378,12 +388,17 @@ func (b brokenMount) HandleEvent(RenderContext, string, Payload, State) (State, 
 }
 func (b brokenMount) Render(State) Tree { return Text("x") }
 
-func TestLiveChannelDeliverMountErrorReturns500(t *testing.T) {
+// A live region whose Mount fails no longer 500s the whole page (as the old
+// LiveChannel.Deliver did): the composite floor degrades that one region to an
+// inline error card and still serves the rest of the page at 200, so one
+// misbehaving live region cannot take the page down. This is the intended
+// cutover improvement.
+func TestServeLiveMountErrorDegradesToErrorCard(t *testing.T) {
 	page := NewPage(func(f *Frame) template.HTML {
 		return template.HTML("<html><body>" + string(f.Slot("b")) + "</body></html>")
 	}).Named("demo").AddLive(brokenMount{id: "b"})
 	mux := http.NewServeMux()
-	Serve(mux, "/", page, LiveChannel{})
+	Serve(mux, "/", page, nil)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
@@ -391,9 +406,12 @@ func TestLiveChannelDeliverMountErrorReturns500(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusInternalServerError)
+	body := readAll(t, resp)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	if !strings.Contains(body, "data-q-error") {
+		t.Fatalf("mount failure did not degrade to an error card:\n%s", body)
 	}
 }
 
@@ -402,7 +420,7 @@ func TestLiveChannelWSHandlerRejectsNonUpgradeRequest(t *testing.T) {
 		return template.HTML("<html><body>" + string(f.Slot("c")) + "</body></html>")
 	}).Named("demo").AddLive(counter{id: "c"})
 	mux := http.NewServeMux()
-	Serve(mux, "/", page, LiveChannel{})
+	Serve(mux, "/", page, nil)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
@@ -421,7 +439,7 @@ func TestLiveChannelServeFirstReadErrorReturns(t *testing.T) {
 		return template.HTML("<html><body>" + string(f.Slot("c")) + "</body></html>")
 	}).Named("demo").AddLive(counter{id: "c"})
 	mux := http.NewServeMux()
-	Serve(mux, "/", page, LiveChannel{})
+	Serve(mux, "/", page, nil)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
@@ -453,7 +471,7 @@ func TestLiveChannelEventHandleEventErrorSendsError(t *testing.T) {
 		return template.HTML("<html><body>" + string(f.Slot("e")) + "</body></html>")
 	}).Named("demo").AddLive(erroringCounter{id: "e"})
 	mux := http.NewServeMux()
-	Serve(mux, "/", page, LiveChannel{})
+	Serve(mux, "/", page, nil)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
@@ -494,7 +512,7 @@ func TestLiveChannelEventPanicRecovered(t *testing.T) {
 		return template.HTML("<html><body>" + string(f.Slot("p")) + "</body></html>")
 	}).Named("demo").AddLive(panickyCounter{id: "p"})
 	mux := http.NewServeMux()
-	Serve(mux, "/", page, LiveChannel{})
+	Serve(mux, "/", page, nil)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
@@ -553,7 +571,7 @@ func TestLiveChannelResumeRenderPanicSendsErrorAndSurvives(t *testing.T) {
 		AddLive(panickyFirstRender{id: "p", calls: &calls}).
 		AddLive(counter{id: "c"})
 	mux := http.NewServeMux()
-	Serve(mux, "/", page, LiveChannel{})
+	Serve(mux, "/", page, nil)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
@@ -614,7 +632,7 @@ func TestLiveChannelEventShapeChangeSendsFullViaDiff(t *testing.T) {
 		return template.HTML("<html><body>" + string(f.Slot("s")) + "</body></html>")
 	}).Named("demo").AddLive(shapeShifter{id: "s"})
 	mux := http.NewServeMux()
-	Serve(mux, "/", page, LiveChannel{})
+	Serve(mux, "/", page, nil)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
@@ -664,7 +682,7 @@ func TestLiveChannelEventStaticOnlyChangeSendsFullNotPatch(t *testing.T) {
 		return template.HTML("<html><body>" + string(f.Slot("t")) + "</body></html>")
 	}).Named("demo").AddLive(staticToggler{id: "t"})
 	mux := http.NewServeMux()
-	Serve(mux, "/", page, LiveChannel{})
+	Serve(mux, "/", page, nil)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
@@ -697,7 +715,7 @@ func TestLiveChannelEventLoopIgnoresNonEventMessage(t *testing.T) {
 		return template.HTML("<html><body>" + string(f.Slot("c")) + "</body></html>")
 	}).Named("demo").AddLive(counter{id: "c"})
 	mux := http.NewServeMux()
-	Serve(mux, "/", page, LiveChannel{})
+	Serve(mux, "/", page, nil)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 

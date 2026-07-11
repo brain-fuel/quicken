@@ -14,12 +14,12 @@ import (
 	"goforge.dev/quicken"
 )
 
-// TestClientFetchInBrowser loads a ClientFetch page in a real browser and
-// asserts the skeleton is replaced by the fetched region content. It is
+// TestRegionRevealInBrowser loads a page in a real browser and asserts the
+// skeleton is replaced by the streamed region content the shim reveals. It is
 // default-skipped: it runs only when QUICKEN_BROWSER_TEST=1, and it skips
 // (never fails) if a browser cannot be launched. chromedp is a test-time
 // dependency; consumers of the library do not build it.
-func TestClientFetchInBrowser(t *testing.T) {
+func TestRegionRevealInBrowser(t *testing.T) {
 	if os.Getenv("QUICKEN_BROWSER_TEST") == "" {
 		t.Skip("set QUICKEN_BROWSER_TEST=1 to run the browser e2e (needs chromium)")
 	}
@@ -35,7 +35,7 @@ func TestClientFetchInBrowser(t *testing.T) {
 
 	mux := http.NewServeMux()
 	quicken.Mount(mux)
-	quicken.Serve(mux, "/", page, quicken.ClientFetch{})
+	quicken.Serve(mux, "/", page, nil)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
