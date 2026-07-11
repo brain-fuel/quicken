@@ -202,7 +202,21 @@ func TestServeCompositeWithLiveRegion(t *testing.T) {
 	}
 	rec2 := httptest.NewRecorder()
 	mux.ServeHTTP(rec2, httptest.NewRequest("GET", liveBasePath("")+"/poll?token="+m[1], nil))
-	if rec2.Code == http.StatusNotFound {
-		t.Error("live poll route not mounted")
+	// A mounted pollHandler answers a valid token's first poll with a JSON
+	// "first" message and Content-Type: application/json (see longpoll.go's
+	// pollHandler). An unmounted poll path instead falls through to the "/"
+	// composite handler, which also returns 200 but with Content-Type:
+	// text/html (see runtime.go's renderFloor) -- so both "mounted" and
+	// "unmounted" answer 200, and a bare non-404 check can't tell them
+	// apart. Assert the JSON content type and first-message marker instead:
+	// only the mounted poll handler produces them.
+	if rec2.Code != http.StatusOK {
+		t.Errorf("live poll route not mounted: status = %d, body:\n%s", rec2.Code, rec2.Body.String())
+	}
+	if ct := rec2.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("live poll route not mounted (fell through to HTML floor): Content-Type = %q, body:\n%s", ct, rec2.Body.String())
+	}
+	if !strings.Contains(rec2.Body.String(), `"type":"first"`) {
+		t.Errorf("live poll response missing first-message marker:\n%s", rec2.Body.String())
 	}
 }
