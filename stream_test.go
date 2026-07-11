@@ -26,11 +26,16 @@ func demoPage() *Page {
 			func(RenderContext) Tree { return Text("<p>BETA CONTENT</p>") }))
 }
 
+// defaultResolve tags every region with the kind-inferred default a nil
+// Policy produces for a plain region (Deferred{Server, OnLoad}), so a test can
+// drive renderFloor without constructing a cadence.Policy.
+func defaultResolve(string) fillTag { return fillTag{Strategy: "deferred", Trigger: "onload"} }
+
 func TestStreamDeliversShellSkeletonsFillsAndClose(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
-	if err := (StreamHTML{}).Deliver(rec, req, demoPage()); err != nil {
-		t.Fatalf("Deliver error: %v", err)
+	if err := renderFloor(rec, req, demoPage(), defaultResolve); err != nil {
+		t.Fatalf("renderFloor error: %v", err)
 	}
 	body := rec.Body.String()
 
@@ -50,8 +55,8 @@ func TestStreamDeliversShellSkeletonsFillsAndClose(t *testing.T) {
 			t.Fatalf("body missing real content %q", want)
 		}
 	}
-	// Fill blocks and swap scripts are present for both regions.
-	for _, want := range []string{`data-q-fill="alpha"`, `data-q-fill="beta"`, `__quicken.swap("alpha")`, `__quicken.swap("beta")`} {
+	// Fill blocks and reveal scripts are present for both regions.
+	for _, want := range []string{`data-q-fill="alpha"`, `data-q-fill="beta"`, `__quicken.reveal("alpha")`, `__quicken.reveal("beta")`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("body missing fill/swap %q", want)
 		}
@@ -79,8 +84,8 @@ func TestStreamRegionPanicBecomesErrorCard(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
-	if err := (StreamHTML{}).Deliver(rec, req, page); err != nil {
-		t.Fatalf("Deliver error: %v", err)
+	if err := renderFloor(rec, req, page, defaultResolve); err != nil {
+		t.Fatalf("renderFloor error: %v", err)
 	}
 	body := rec.Body.String()
 	if !strings.Contains(body, "data-q-error") {
@@ -110,7 +115,7 @@ func TestStreamHonorsContextCancellation(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- (StreamHTML{}).Deliver(rec, req, page)
+		errCh <- renderFloor(rec, req, page, defaultResolve)
 	}()
 
 	cancel()

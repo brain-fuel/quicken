@@ -88,16 +88,16 @@ func TestFromMarkupPanicsOnMalformedMarkup(t *testing.T) {
 	FromMarkup(`<!--quicken lazy bad/id-->`)
 }
 
-func TestFromMarkupServesOverTransport(t *testing.T) {
-	// A FromMarkup page is an ordinary Page: it delivers over StreamHTML like
-	// any other, filling the region.
+func TestFromMarkupServesOverFloor(t *testing.T) {
+	// A FromMarkup page is an ordinary Page: it streams over the floor like any
+	// other, filling the region.
 	p := FromMarkup(`<!doctype html><html><head><!--quicken head--></head><body><!--quicken lazy cards--></body></html>`).
 		Add(RegionFunc("cards",
 			func(RenderContext) Tree { return Text("sk") },
 			func(RenderContext) Tree { return Text("<p>REAL</p>") }))
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/", nil)
-	if err := (StreamHTML{}).Deliver(rec, req, p); err != nil {
+	if err := renderFloor(rec, req, p, defaultResolve); err != nil {
 		t.Fatal(err)
 	}
 	body := rec.Body.String()

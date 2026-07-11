@@ -29,10 +29,9 @@ func renderFloor(w http.ResponseWriter, r *http.Request, p *Page, resolve func(i
 // liveSetup carries the per-request live-session plumbing renderFloorAndLive
 // needs to stream each live region's first render into the floor and mint a
 // resumable session: the channel (for its session store), the token minted
-// for this request, and the session those live regions mount into. It
-// mirrors LiveChannel.Deliver's own token/store mechanics so a live session
-// started from the composite floor resumes exactly like one started from
-// Deliver.
+// for this request, and the session those live regions mount into. The
+// token/store mechanics live here so a live session started from the floor
+// resumes over the same store the live routes read from.
 type liveSetup struct {
 	lc    LiveChannel
 	token string
@@ -187,22 +186,19 @@ func tagOf(s cadence.Strategy) fillTag {
 	}
 }
 
-// serveComposite mounts a page on mux at path. Each request resolves every
+// Serve mounts a page on mux at path. Each request resolves every
 // deferred/eager region's cadence.Strategy from pol (nil pol = kind-inferred
 // default) and streams the universal floor: shell + skeletons first, then
 // every region's full content tagged with its strategy so the client shim
 // reveals it accordingly. With scripting off the floor is the page.
 //
 // If the page has any live regions, their WebSocket/poll/event routes are
-// mounted alongside path (once, at Serve-time, exactly like LiveChannel.Routes
-// would), and each request additionally mints a resume token and session —
-// the same mechanics LiveChannel.Deliver uses — streams every live region's
-// first render into the floor tagged "live", registers each into the
-// session, and appends the live manifest, so a socket connecting with that
-// token resumes the same state the floor just showed.
-//
-// (Exposed as the public Serve at the Task 6 cutover.)
-func serveComposite(mux *http.ServeMux, path string, p *Page, pol cadence.Policy) {
+// mounted alongside path (once, at Serve time), and each request additionally
+// mints a resume token and session, streams every live region's first render
+// into the floor tagged "live", registers each into the session, and appends
+// the live manifest, so a socket connecting with that token resumes the same
+// state the floor just showed.
+func Serve(mux *http.ServeMux, path string, p *Page, pol cadence.Policy) {
 	if len(p.liveOrder) > 0 {
 		var lc LiveChannel
 		for route, h := range lc.liveRoutes(p) {

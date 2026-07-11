@@ -99,7 +99,7 @@ func TestServeCompositeMixedStrategies(t *testing.T) {
 		"cold": {Kind: cadence.Deferred, Where: cadence.Server, On: cadence.OnVisible},
 	})
 	mux := http.NewServeMux()
-	serveComposite(mux, "/", p, pol)
+	Serve(mux, "/", p, pol)
 
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
@@ -146,7 +146,7 @@ func TestServeCompositeDegradesClientStrategy(t *testing.T) {
 		"c": {Kind: cadence.Deferred, Where: cadence.Client, On: cadence.OnLoad},
 	})
 	mux := http.NewServeMux()
-	serveComposite(mux, "/", p, pol)
+	Serve(mux, "/", p, pol)
 
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
@@ -171,7 +171,7 @@ func TestServeCompositeWithLiveRegion(t *testing.T) {
 	p.AddLive(newTestClock("clock")) // LiveRegion whose first Render contains "TICK-0"
 
 	mux := http.NewServeMux()
-	serveComposite(mux, "/", p, nil) // nil policy: live region → Live
+	Serve(mux, "/", p, nil) // nil policy: live region → Live
 
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))

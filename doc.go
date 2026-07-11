@@ -1,20 +1,21 @@
 // Package quicken renders web pages as a fast shell plus deferred regions.
 //
 // A page paints its shell and lightweight skeletons immediately, then fills
-// each region with its real content as that content becomes ready. The
-// default transport streams over one HTTP response and stays readable with
-// JavaScript disabled. A ClientFetch transport fetches each region after
-// load, and a LiveChannel transport keeps a region live over a WebSocket
-// (falling back to HTTP long-poll), pushing fine-grained patches as its
+// each region with its real content as that content becomes ready. Serve
+// streams the universal floor over one HTTP response and stays readable with
+// JavaScript disabled; a cadence.Policy decides, per region, whether the
+// client reveals that content eagerly, on load, on visibility, or on hover.
+// A page may also carry live regions, which Serve keeps live over a WebSocket
+// (falling back to HTTP long-poll), pushing fine-grained patches as their
 // server-held state changes.
 //
 // A page's shell can be authored as a Go function over a Frame (the
 // func-registry style), as an HTML marker document parsed by FromMarkup, or
 // as an html/template rendered with the funcs from Helpers and then passed to
-// FromMarkup. All three styles produce the same Page, so a transport serves
-// them identically regardless of how the shell was written.
+// FromMarkup. All three styles produce the same Page, so Serve serves them
+// identically regardless of how the shell was written.
 //
-// Two limitations apply to the LiveChannel transport in this release. The
+// Two limitations apply to live regions in this release. The
 // built-in session store keeps every session in memory and never evicts one,
 // so each page load adds a session that lives for the process lifetime; supply
 // a bounded SessionStore for production use. The WebSocket upgrade performs no

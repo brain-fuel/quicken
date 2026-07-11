@@ -6,10 +6,10 @@ import (
 )
 
 // TestLiveFirstRenderMatchesDeferredContent asserts that the live counter at
-// its mount state renders the same bytes a deferred region would for the
-// same content: StreamHTML and ClientFetch stitch a deferred region's
-// Render(ctx).HTML(), and LiveChannel's first render is Render(mountState);
-// for equivalent content all three transports must agree byte for byte.
+// its mount state renders the same bytes a deferred region would for the same
+// content: the streamed floor stitches a deferred region's Render(ctx).HTML(),
+// and a live region's first render is Render(mountState); for equivalent
+// content the two must agree byte for byte.
 func TestLiveFirstRenderMatchesDeferredContent(t *testing.T) {
 	c := counter{id: "c"}
 	st, _ := c.Mount(RenderContext{}, nil)

@@ -45,8 +45,8 @@ func (c e2eLiveCounter) Render(s quicken.State) quicken.Tree {
 	)
 }
 
-// TestLiveCounterInBrowser loads a LiveChannel page with a live counter
-// region in a real browser, waits for the socket to deliver the first
+// TestLiveCounterInBrowser loads a page with a live counter region in a real
+// browser, waits for the socket to deliver the first
 // render, clicks the bound button, and asserts the slot updates. It is
 // default-skipped: it runs only when QUICKEN_BROWSER_TEST=1, and it skips
 // (never fails) if a browser cannot be launched. chromedp is a test-time
@@ -64,7 +64,7 @@ func TestLiveCounterInBrowser(t *testing.T) {
 
 	mux := http.NewServeMux()
 	quicken.Mount(mux)
-	quicken.Serve(mux, "/", page, quicken.LiveChannel{})
+	quicken.Serve(mux, "/", page, nil)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 

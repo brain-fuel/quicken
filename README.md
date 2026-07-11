@@ -4,11 +4,13 @@ Fast-shell, deferred-region rendering for Go web apps. Paint the shell now,
 fill the expensive parts as they become ready, stay readable without
 JavaScript.
 
-Status: phase 4. Deferred first render over a streaming HTML transport, a
-ClientFetch transport with prefetch-on-intent, and a LiveChannel transport for
-server-held live regions. The markup marker document and html/template helper
-authoring adapters have landed; explorer integration remains for a later
-phase.
+Status: SP2. One page entry point, `Serve(mux, path, page, policy)`: it streams
+a universal content floor (shell and skeletons first, then every region's full
+content) and a `cadence.Policy` decides, per region, how the client reveals
+that content (eager, on load, on visibility, or on hover). Live regions keep
+server-held state over a WebSocket (with an HTTP long-poll fallback). The
+markup marker document and html/template helper authoring adapters have landed;
+explorer integration remains for a later phase.
 
 License: MIT (Copyright (c) 2026 Goforge).
 
@@ -35,39 +37,46 @@ page := quicken.NewPage(func(f *quicken.Frame) template.HTML {
 ))
 
 mux := http.NewServeMux()
-quicken.Mount(mux)                 // serves the swap shim
-mux.Handle("/", page.Handler(nil)) // nil transport uses StreamHTML
+quicken.Mount(mux)               // serves the shim
+quicken.Serve(mux, "/", page, nil) // nil policy: kind-inferred defaults
 ```
 
-With JavaScript the region is relocated into its slot as it finishes; without
-JavaScript its content stays readable at the end of the document.
+The floor always carries every region's real content, so with JavaScript off
+the page is fully readable. With JavaScript the shim reveals each region into
+its slot according to the policy.
 
-## ClientFetch and prefetch
+## Reveal strategies (cadence.Policy)
 
-The ClientFetch transport sends a fast shell with skeletons and no region
-content; the client fetches each region from `/_regions/<page>/<id>` after
-load. Mount it with Serve so those endpoints exist:
-
-ClientFetch is a JavaScript enhancement: with scripting disabled the page
-shows only skeletons. Use the default StreamHTML transport when a
-no-JavaScript content floor is required.
+A `nil` policy uses the kind-inferred default: plain regions are deferred and
+revealed on load, live regions go live. Pass a `cadence.Policy` to choose a
+different reveal strategy per region. Strategies come from the `cadence`
+package: `Eager` (reveal immediately), `Deferred{Server, OnLoad|OnVisible|OnHover}`,
+and `Live`.
 
 ```go
+import "goforge.dev/cadence"
+
+pol := cadence.Fixed(map[string]cadence.Strategy{
+    "hero":  {Kind: cadence.Eager},
+    "cards": {Kind: cadence.Deferred, Where: cadence.Server, On: cadence.OnVisible},
+})
+
 mux := http.NewServeMux()
 quicken.Mount(mux)
-quicken.Serve(mux, "/", page.Named("demo"), quicken.ClientFetch{})
+quicken.Serve(mux, "/", page.Named("demo"), pol)
 ```
 
-Prefetch-on-intent warms the client cache before a click. Mark a trigger
-element with `data-q-prefetch="/_regions/demo/cards"` and, optionally,
-`data-q-prefetch-on="mouseover"` (the default), `focusin`, or `visible`. The
-cache is shared with region fetches, so a prefetched url loads instantly.
+`OnVisible` defers the reveal behind an `IntersectionObserver` on the slot;
+`OnHover` defers it behind a mouseover/focusin listener. Because the content
+is already in the floor, these are pure client-side reveal timings, not extra
+round trips: with scripting off the content is visible regardless.
 
 ## Live regions
 
 `AddLive` registers a region that keeps server-held state across events,
-instead of the one-shot `Render(ctx)` a deferred `Region` uses. Mount it with
-`Serve` and the `LiveChannel{}` transport:
+instead of the one-shot `Render(ctx)` a deferred `Region` uses. Serve mounts
+its WebSocket and long-poll routes automatically; a nil policy sends live
+regions live, or set them explicitly with a policy:
 
 ```go
 page := quicken.NewPage(shell).Named("demo").
@@ -75,7 +84,7 @@ page := quicken.NewPage(shell).Named("demo").
 
 mux := http.NewServeMux()
 quicken.Mount(mux)
-quicken.Serve(mux, "/", page, quicken.LiveChannel{})
+quicken.Serve(mux, "/", page, nil) // live regions inferred as Live
 ```
 
 `myCounter` implements `LiveRegion`: `Mount` produces the initial `State`,
@@ -92,14 +101,14 @@ session's state rather than remounting. When a WebSocket cannot be opened, or
 one drops, the client falls back to an HTTP long-poll transport automatically,
 using the same token and message shapes.
 
-LiveChannel is a JavaScript enhancement: with scripting off, a live region
-shows its skeleton and nothing more, since there is no socket to carry state
-or events. When a no-JavaScript content floor is required, use the default
-StreamHTML transport instead.
+The floor streams each live region's first render as its no-JavaScript
+snapshot, so a live region is readable with scripting off; the socket only
+adds the live updates on top. On load the shim swaps that snapshot into the
+slot before opening the socket, so there is no skeleton flash.
 
 ### Production notes
 
-Two limitations apply to LiveChannel in this release:
+Two limitations apply to live regions in this release:
 
 - The built-in in-memory session store never evicts a session, so every page
   load adds a `LiveSession` that lives for the process lifetime. This is fine
@@ -115,8 +124,7 @@ Two limitations apply to LiveChannel in this release:
 ## Authoring
 
 A page's shell can be authored three ways, and all three produce an ordinary
-`*Page`, so any transport (StreamHTML, ClientFetch, LiveChannel) serves them
-identically.
+`*Page`, so `Serve` serves them identically.
 
 - **Func-registry.** Write the shell as a Go function over a `*Frame`, calling
   `f.Head()` and `f.Slot(id)` where the shim and each region belong. This is

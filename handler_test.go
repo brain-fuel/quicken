@@ -8,25 +8,17 @@ import (
 	"testing"
 )
 
-// TestPageHandlerServesWithDefaultAndExplicitTransport closes the branch
-// deferred from Task 5: Handler(nil) must default to StreamHTML, and an
-// explicit StreamHTML{} must behave the same. Both should serve a region's
-// real content.
-func TestPageHandlerServesWithDefaultAndExplicitTransport(t *testing.T) {
-	for name, transport := range map[string]Transport{
-		"nil transport":         nil,
-		"explicit StreamHTML{}": StreamHTML{},
-	} {
-		t.Run(name, func(t *testing.T) {
-			p := demoPage()
-			req := httptest.NewRequest(http.MethodGet, "/", nil)
-			rec := httptest.NewRecorder()
-			p.Handler(transport).ServeHTTP(rec, req)
-			body := rec.Body.String()
-			if !strings.Contains(body, "ALPHA CONTENT") {
-				t.Fatalf("Handler(%v) body missing region content: %q", transport, body)
-			}
-		})
+// TestServeNilPolicyServesRegionContent asserts that Serve with a nil policy
+// (the kind-inferred default) streams a region's real content into the floor.
+func TestServeNilPolicyServesRegionContent(t *testing.T) {
+	mux := http.NewServeMux()
+	Serve(mux, "/", demoPage(), nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	body := rec.Body.String()
+	if !strings.Contains(body, "ALPHA CONTENT") {
+		t.Fatalf("Serve(nil) body missing region content: %q", body)
 	}
 }
 
@@ -58,8 +50,8 @@ func TestFlushNonFlusherWriterStillDeliversFullDocument(t *testing.T) {
 		t.Fatal("test double unexpectedly implements http.Flusher")
 	}
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	if err := (StreamHTML{}).Deliver(w, req, demoPage()); err != nil {
-		t.Fatalf("Deliver error: %v", err)
+	if err := renderFloor(w, req, demoPage(), defaultResolve); err != nil {
+		t.Fatalf("renderFloor error: %v", err)
 	}
 	body := w.body.String()
 	for _, want := range []string{"ALPHA CONTENT", "BETA CONTENT", "</body></html>"} {
@@ -95,19 +87,19 @@ func (w *failingAfterWriter) Write(b []byte) (int, error) {
 
 func (w *failingAfterWriter) WriteHeader(int) {}
 
-func TestDeliverReturnsErrorWhenHeadWriteFails(t *testing.T) {
+func TestRenderFloorReturnsErrorWhenHeadWriteFails(t *testing.T) {
 	w := newFailingAfterWriter(1)
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	if err := (StreamHTML{}).Deliver(w, req, demoPage()); err == nil {
+	if err := renderFloor(w, req, demoPage(), defaultResolve); err == nil {
 		t.Fatal("expected error from failed head write, got nil")
 	}
 }
 
-func TestDeliverReturnsErrorWhenFillWriteFails(t *testing.T) {
+func TestRenderFloorReturnsErrorWhenFillWriteFails(t *testing.T) {
 	// The 1st Write is the shell head; the 2nd is the first region fill.
 	w := newFailingAfterWriter(2)
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	if err := (StreamHTML{}).Deliver(w, req, demoPage()); err == nil {
+	if err := renderFloor(w, req, demoPage(), defaultResolve); err == nil {
 		t.Fatal("expected error from failed fill write, got nil")
 	}
 }
