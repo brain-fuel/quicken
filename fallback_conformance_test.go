@@ -27,6 +27,34 @@ func TestFloorInterpreterFallbackHolds(t *testing.T) {
 	}
 }
 
+// nonDegradingInterpreter is the negative witness: unlike floorInterpreter,
+// it does NOT collapse every strategy to the region's full render. For Eager
+// it serves Render, but for every other strategy it serves Skeleton instead
+// of degrading to Render under no-JS. This exists to prove
+// TestFloorInterpreterFallbackHolds is not vacuous: an interpreter whose
+// output genuinely varies by strategy must fail cadence.FallbackHolds.
+type nonDegradingInterpreter struct{}
+
+func (nonDegradingInterpreter) Serve(r cadence.Region, s cadence.Strategy, _ cadence.RequestContext) (cadence.Tree, error) {
+	if s.Kind == cadence.Eager {
+		return r.Render(cadence.RenderContext{}), nil
+	}
+	return r.Skeleton(cadence.RenderContext{}), nil
+}
+
+// TestFloorConformanceIsNotVacuous proves that cadence.FallbackHolds actually
+// exercises strategy-dependent behavior rather than trivially passing. Using
+// textRegion("x", "REAL"), whose skeleton ("skeleton-x") differs from its
+// render ("REAL"), a non-degrading interpreter must fail the law: it serves
+// Skeleton for non-Eager strategies under no-JS instead of degrading to
+// Render. If FallbackHolds ever returned true here, the law-check would be
+// vacuous — it would not actually be comparing strategy-dependent output.
+func TestFloorConformanceIsNotVacuous(t *testing.T) {
+	if cadence.FallbackHolds(nonDegradingInterpreter{}, textRegion("x", "REAL")) {
+		t.Fatal("nonDegradingInterpreter must fail the fallback law; FallbackHolds returning true means the law-check is vacuous and is not exercising strategy-dependent behavior")
+	}
+}
+
 // TestDeferredServerRegionDegradesToRealContent asserts the Deferred{Server}
 // counterpart to TestServeCompositeDegradesClientStrategy: a region whose
 // resolved strategy is Deferred{Server,OnLoad} still has its full, real
