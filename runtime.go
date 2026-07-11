@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"goforge.dev/cadence"
 )
@@ -145,7 +146,9 @@ func renderFloorAndLive(w http.ResponseWriter, r *http.Request, p *Page, resolve
 // Policy falls back to the kind-inferred default: a LiveRegion gets Live, a
 // plain Region gets Deferred{Server,OnLoad}. A non-nil Policy is consulted
 // via StrategyFor. Deferred{Client} is rejected: it requires the TEA
-// interpreter, which SP2 does not yet provide.
+// interpreter, which SP2 does not yet provide. Live is only meaningful for a
+// region registered with AddLive; a Policy that assigns Live to a plain
+// region (registered with Add) is degraded to Eager, see below.
 func strategyFor(p *Page, pol cadence.Policy, id string, ctx cadence.RequestContext) (cadence.Strategy, error) {
 	var s cadence.Strategy
 	if pol == nil {
@@ -159,6 +162,18 @@ func strategyFor(p *Page, pol cadence.Policy, id string, ctx cadence.RequestCont
 	}
 	if s.Kind == cadence.Deferred && s.Where == cadence.Client {
 		return s, errors.New("quicken: Deferred{Client} strategy for region " + id + " requires the TEA interpreter (SP3), not available in SP2")
+	}
+	if s.Kind == cadence.Live {
+		if _, live := p.live[id]; !live {
+			// A plain region (Add, not AddLive) is not in p.live and never
+			// in p.liveOrder, so a "live" fill would never be tagged by
+			// reveal (which no-ops on "live") nor swapped by
+			// swapLiveSnapshots (which only walks p.liveOrder): with
+			// scripting on the slot would stay a stuck skeleton forever.
+			// Degrade to eager, exactly like an unsupported Deferred{Client}
+			// degrades below, so the floor still fills the region.
+			s = cadence.Strategy{Kind: cadence.Eager}
+		}
 	}
 	return s, nil
 }
@@ -186,6 +201,36 @@ func tagOf(s cadence.Strategy) fillTag {
 	}
 }
 
+// serveConfig is the resolved configuration Serve builds from its
+// ServeOptions. Its zero value reproduces today's defaults exactly: a nil
+// store resolves to the process-wide defaultStore (see LiveChannel.store),
+// and a zero pollTimeout resolves to defaultPollTimeout (see
+// LiveChannel.timeout).
+type serveConfig struct {
+	store       SessionStore
+	pollTimeout time.Duration
+}
+
+// ServeOption configures Serve's live-session plumbing. Passing none
+// reproduces today's defaults exactly.
+type ServeOption func(*serveConfig)
+
+// WithSessionStore supplies the SessionStore Serve mints live sessions into
+// and resumes them from. Without this option Serve falls back to a
+// process-wide in-memory store that never evicts a session; see the package
+// doc's Production notes. Production deployments serving live regions should
+// supply a bounded (TTL or LRU) store here.
+func WithSessionStore(s SessionStore) ServeOption {
+	return func(c *serveConfig) { c.store = s }
+}
+
+// WithPollTimeout sets how long the long-poll GET endpoint blocks waiting for
+// the next queued message before responding 204. Without this option Serve
+// uses defaultPollTimeout.
+func WithPollTimeout(d time.Duration) ServeOption {
+	return func(c *serveConfig) { c.pollTimeout = d }
+}
+
 // Serve mounts a page on mux at path. Each request resolves every
 // deferred/eager region's cadence.Strategy from pol (nil pol = kind-inferred
 // default) and streams the universal floor: shell + skeletons first, then
@@ -198,9 +243,24 @@ func tagOf(s cadence.Strategy) fillTag {
 // into the floor tagged "live", registers each into the session, and appends
 // the live manifest, so a socket connecting with that token resumes the same
 // state the floor just showed.
-func Serve(mux *http.ServeMux, path string, p *Page, pol cadence.Policy) {
+//
+// opts configures the live transport: WithSessionStore supplies the
+// SessionStore (see its doc for why production deployments need this), and
+// WithPollTimeout overrides the long-poll timeout. The single LiveChannel
+// built from opts is used both to mount the live routes below and, per
+// request, to mint each session, so a custom store is the one the mounted
+// poll/WS/event handlers read AND the one the floor's first render writes
+// into (LiveChannel.store resolves lc.Store, falling back to the process-wide
+// defaultStore only when it is nil, so these two uses must share one lc value
+// or a custom store would silently split from the routes reading it).
+func Serve(mux *http.ServeMux, path string, p *Page, pol cadence.Policy, opts ...ServeOption) {
+	var cfg serveConfig
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	lc := LiveChannel{Store: cfg.store, pollTimeout: cfg.pollTimeout}
+
 	if len(p.liveOrder) > 0 {
-		var lc LiveChannel
 		for route, h := range lc.liveRoutes(p) {
 			mux.Handle(route, h)
 		}
@@ -218,7 +278,6 @@ func Serve(mux *http.ServeMux, path string, p *Page, pol cadence.Policy) {
 		}
 		var live *liveSetup
 		if len(p.liveOrder) > 0 {
-			var lc LiveChannel
 			token, err := newToken()
 			if err != nil {
 				http.Error(w, "session error", http.StatusInternalServerError)

@@ -120,8 +120,9 @@ Two limitations apply to live regions in this release:
 - The built-in in-memory session store never evicts a session, so every page
   load adds a `LiveSession` that lives for the process lifetime. This is fine
   for development and small deployments, but for production supply a bounded
-  `SessionStore` (the interface is the seam for a TTL or LRU store). A tracked
-  follow-up will add an evicting default.
+  `SessionStore` (the interface is the seam for a TTL or LRU store) via
+  `quicken.Serve(mux, path, p, pol, quicken.WithSessionStore(store))`. A
+  tracked follow-up will add an evicting default.
 - The WebSocket upgrade does not check the `Origin` header. An application that
   needs cross-site request protection should validate `Origin` itself before
   upgrading. Note that driving a live region already requires the unguessable

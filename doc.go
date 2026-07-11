@@ -17,10 +17,11 @@
 //
 // Two limitations apply to live regions in this release. The
 // built-in session store keeps every session in memory and never evicts one,
-// so each page load adds a session that lives for the process lifetime; supply
-// a bounded SessionStore for production use. The WebSocket upgrade performs no
-// same-origin (Origin header) check, so an application that needs cross-site
-// request protection should validate the Origin itself. Driving a live region
-// still requires the unguessable per-session resume token embedded in the
-// page.
+// so each page load adds a session that lives for the process lifetime;
+// supply a bounded SessionStore for production use via
+// Serve(mux, path, p, pol, WithSessionStore(store)). The WebSocket upgrade
+// performs no same-origin (Origin header) check, so an application that needs
+// cross-site request protection should validate the Origin itself. Driving a
+// live region still requires the unguessable per-session resume token
+// embedded in the page.
 package quicken

@@ -9,7 +9,11 @@ import (
 
 // LiveChannel is the live transport: a WebSocket carries the first render and
 // every subsequent fine-grained patch. A zero value uses a process-wide
-// in-memory session store; set Store to supply your own.
+// in-memory session store that never evicts a session; set Store to supply
+// your own bounded (TTL or LRU) store for production. Serve builds and owns
+// the LiveChannel for a page; callers configure it through Serve's
+// WithSessionStore and WithPollTimeout options rather than constructing a
+// LiveChannel directly.
 //
 // pollTimeout controls how long the long-poll GET endpoint blocks waiting for
 // the next queued message before responding 204. Zero means a default (see

@@ -214,6 +214,37 @@ func TestServeCompositeDegradesClientStrategy(t *testing.T) {
 	}
 }
 
+// TestServeCompositeDegradesLiveOnPlainRegion is Finding 2's regression: a
+// Policy that assigns Live to a region registered with Add (not AddLive) must
+// not stick behind its skeleton. Left as "live", reveal (which no-ops on
+// "live") and swapLiveSnapshots (which only walks p.liveOrder, and this
+// region is in neither p.live nor p.liveOrder) would never fill the slot with
+// scripting on, even though the floor already has the real content.
+func TestServeCompositeDegradesLiveOnPlainRegion(t *testing.T) {
+	p := NewPage(func(f *Frame) template.HTML {
+		return template.HTML("<html><body>" + string(f.Slot("p")) + "</body></html>")
+	})
+	p.Add(textRegion("p", "PLAIN-CONTENT"))
+
+	pol := cadence.Uniform(cadence.Strategy{Kind: cadence.Live})
+	mux := http.NewServeMux()
+	Serve(mux, "/", p, pol)
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `data-q-fill="p" data-q-strategy="eager"`) {
+		t.Errorf("Live-on-plain-region not degraded to eager:\n%s", body)
+	}
+	if !strings.Contains(body, "PLAIN-CONTENT") {
+		t.Errorf("full content missing from degraded floor:\n%s", body)
+	}
+}
+
 func TestServeCompositeWithLiveRegion(t *testing.T) {
 	p := NewPage(func(f *Frame) template.HTML {
 		return template.HTML("<html><head>" + string(f.Head()) + "</head><body>" +
@@ -269,5 +300,58 @@ func TestServeCompositeWithLiveRegion(t *testing.T) {
 	}
 	if !strings.Contains(rec2.Body.String(), `"type":"first"`) {
 		t.Errorf("live poll response missing first-message marker:\n%s", rec2.Body.String())
+	}
+}
+
+// TestServeWithSessionStoreOptionSharesStoreAcrossMountAndRequest is
+// Finding 1's regression: public Serve had no way to inject a SessionStore,
+// so every deployment was stuck on the never-evicting process-wide
+// defaultStore despite the docs instructing production users to supply a
+// bounded one. This drives the public API end-to-end (no unexported
+// LiveChannel construction) and proves the SAME injected store backs both
+// the per-request session mint and the routes Serve mounted at Serve time:
+// if those two paths built separate LiveChannel values, each would silently
+// fall back to its own defaultStore and this test would fail even though
+// nothing panics.
+func TestServeWithSessionStoreOptionSharesStoreAcrossMountAndRequest(t *testing.T) {
+	p := NewPage(func(f *Frame) template.HTML {
+		return template.HTML("<html><head>" + string(f.Head()) + "</head><body>" +
+			string(f.Slot("clock")) + "</body></html>")
+	})
+	p.AddLive(newTestClock("clock"))
+
+	custom := NewMemoryStore()
+	mux := http.NewServeMux()
+	Serve(mux, "/", p, nil, WithSessionStore(custom))
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+	body := rec.Body.String()
+
+	m := regexp.MustCompile(`"token":"([^"]+)"`).FindStringSubmatch(body)
+	if m == nil {
+		t.Fatal("could not extract live token from manifest")
+	}
+	token := m[1]
+
+	// The token minted into the served manifest must land in the injected
+	// custom store, not the process-wide default.
+	if _, ok := custom.Get(token); !ok {
+		t.Fatal("session minted for the served token is missing from the injected custom store")
+	}
+
+	// Driving the mounted poll route with that token must resolve against
+	// the SAME custom store: a split store (mount-time vs per-request) would
+	// 404 here even though custom.Get above just succeeded.
+	rec2 := httptest.NewRecorder()
+	mux.ServeHTTP(rec2, httptest.NewRequest("GET", liveBasePath("")+"/poll?token="+token, nil))
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("poll route did not resolve the custom-store session: status = %d, body:\n%s", rec2.Code, rec2.Body.String())
+	}
+	if ct := rec2.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("poll route not mounted against custom store: Content-Type = %q", ct)
+	}
+	if !strings.Contains(rec2.Body.String(), `"type":"first"`) {
+		t.Errorf("poll response missing first-message marker:\n%s", rec2.Body.String())
 	}
 }
