@@ -134,3 +134,30 @@ func TestStrategyForPolicyOverrideAndClientReject(t *testing.T) {
 		t.Error("Deferred{Client} must be rejected in SP2")
 	}
 }
+
+func TestServeCompositeDegradesClientStrategy(t *testing.T) {
+	p := NewPage(func(f *Frame) template.HTML {
+		return template.HTML("<html><body>" + string(f.Slot("c")) + "</body></html>")
+	})
+	p.Add(textRegion("c", "CLIENT-CONTENT"))
+
+	pol := cadence.Fixed(map[string]cadence.Strategy{
+		"c": {Kind: cadence.Deferred, Where: cadence.Client, On: cadence.OnLoad},
+	})
+	mux := http.NewServeMux()
+	serveComposite(mux, "/", p, pol)
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `data-q-fill="c" data-q-strategy="eager"`) {
+		t.Errorf("region not degraded to eager:\n%s", body)
+	}
+	if !strings.Contains(body, "CLIENT-CONTENT") {
+		t.Errorf("full content missing from degraded floor:\n%s", body)
+	}
+}
