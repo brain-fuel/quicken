@@ -52,6 +52,60 @@
     load(url);
   }
 
+  // reveal: dispatches a streamed fill's swap by its declared strategy/
+  // trigger (data-q-strategy/data-q-trigger, set by serveComposite's tail
+  // stream). eager and onload swap immediately; onvisible defers behind an
+  // IntersectionObserver on the slot; onhover defers behind a mouseover/
+  // focusin listener on the slot; live is a no-op (the live client owns that
+  // fill via the WebSocket/poll transport, not the fill/swap path). Guarded
+  // by `revealed` so a fill is swapped at most once no matter how many times
+  // reveal or its deferred trigger fires.
+  var revealed = {};
+
+  function fillOf(id) {
+    return document.querySelector('[data-q-fill="' + id + '"]');
+  }
+
+  function revealNow(id) {
+    if (revealed[id]) return;
+    revealed[id] = true;
+    swap(id);
+  }
+
+  function reveal(id) {
+    var fill = fillOf(id);
+    if (!fill) return;
+    var strat = fill.getAttribute('data-q-strategy');
+    var trig = fill.getAttribute('data-q-trigger');
+    if (strat === 'live') return;
+    if (trig === 'onvisible') {
+      var slot = document.getElementById('q-slot-' + id);
+      if (slot && typeof IntersectionObserver !== 'undefined') {
+        var io = new IntersectionObserver(function (entries) {
+          for (var i = 0; i < entries.length; i++) {
+            if (entries[i].isIntersecting) { revealNow(id); io.disconnect(); return; }
+          }
+        });
+        io.observe(slot);
+        return;
+      }
+      revealNow(id);
+      return;
+    }
+    if (trig === 'onhover') {
+      var slotH = document.getElementById('q-slot-' + id);
+      if (slotH) {
+        var fire = function () { revealNow(id); };
+        slotH.addEventListener('mouseover', fire, { once: true });
+        slotH.addEventListener('focusin', fire, { once: true });
+        return;
+      }
+      revealNow(id);
+      return;
+    }
+    revealNow(id);
+  }
+
   function wirePrefetch() {
     var nodes = document.querySelectorAll('[data-q-prefetch]');
     for (var i = 0; i < nodes.length; i++) {
@@ -257,6 +311,7 @@
     fetchRegion: fetchRegion,
     prefetch: prefetch,
     wirePrefetch: wirePrefetch,
+    reveal: reveal,
     init: init,
     applyFirst: applyFirst,
     applyFull: applyFull,
