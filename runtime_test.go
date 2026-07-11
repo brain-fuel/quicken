@@ -47,3 +47,36 @@ func TestRenderFloorTagsEachFill(t *testing.T) {
 		t.Error("fills out of order")
 	}
 }
+
+func TestStrategyForKindInferred(t *testing.T) {
+	p := NewPage(func(f *Frame) template.HTML { return "" })
+	p.Add(textRegion("a", "AAA"))
+
+	s, err := strategyFor(p, nil, "a", cadence.RequestContext{})
+	if err != nil {
+		t.Fatalf("strategyFor: %v", err)
+	}
+	if s.Kind != cadence.Deferred || s.Where != cadence.Server || s.On != cadence.OnLoad {
+		t.Errorf("plain region default = %+v, want Deferred{Server,OnLoad}", s)
+	}
+	if tg := tagOf(s); tg.Strategy != "deferred" || tg.Trigger != "onload" {
+		t.Errorf("tagOf = %+v", tg)
+	}
+}
+
+func TestStrategyForPolicyOverrideAndClientReject(t *testing.T) {
+	p := NewPage(func(f *Frame) template.HTML { return "" })
+	p.Add(textRegion("a", "AAA")).Add(textRegion("b", "BBB"))
+
+	pol := cadence.Fixed(map[string]cadence.Strategy{
+		"a": {Kind: cadence.Eager},
+		"b": {Kind: cadence.Deferred, Where: cadence.Client, On: cadence.OnLoad},
+	})
+	s, err := strategyFor(p, pol, "a", cadence.RequestContext{})
+	if err != nil || s.Kind != cadence.Eager {
+		t.Fatalf("override a: %+v err=%v", s, err)
+	}
+	if _, err := strategyFor(p, pol, "b", cadence.RequestContext{}); err == nil {
+		t.Error("Deferred{Client} must be rejected in SP2")
+	}
+}

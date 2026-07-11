@@ -1,9 +1,12 @@
 package quicken
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+
+	"goforge.dev/cadence"
 )
 
 // fillTag labels a streamed region fill so the client shim knows when to
@@ -68,4 +71,48 @@ func renderFloor(w http.ResponseWriter, r *http.Request, p *Page, resolve func(i
 	}
 	_, err := io.WriteString(w, tail)
 	return err
+}
+
+// strategyFor resolves the concrete cadence.Strategy for a region. A nil
+// Policy falls back to the kind-inferred default: a LiveRegion gets Live, a
+// plain Region gets Deferred{Server,OnLoad}. A non-nil Policy is consulted
+// via StrategyFor. Deferred{Client} is rejected: it requires the TEA
+// interpreter, which SP2 does not yet provide.
+func strategyFor(p *Page, pol cadence.Policy, id string, ctx cadence.RequestContext) (cadence.Strategy, error) {
+	var s cadence.Strategy
+	if pol == nil {
+		if _, live := p.live[id]; live {
+			s = cadence.Strategy{Kind: cadence.Live}
+		} else {
+			s = cadence.Strategy{Kind: cadence.Deferred, Where: cadence.Server, On: cadence.OnLoad}
+		}
+	} else {
+		s = pol.StrategyFor(id, ctx, nil)
+	}
+	if s.Kind == cadence.Deferred && s.Where == cadence.Client {
+		return s, errors.New("quicken: Deferred{Client} strategy for region " + id + " requires the TEA interpreter (SP3), not available in SP2")
+	}
+	return s, nil
+}
+
+// tagOf maps a resolved cadence.Strategy to the fillTag the streamed floor
+// uses to label a region's fill. It is a controlled switch: the sole
+// resolver feeding renderFloor's tags, and the only place fillTag's enum
+// strings are produced.
+func tagOf(s cadence.Strategy) fillTag {
+	switch s.Kind {
+	case cadence.Eager:
+		return fillTag{Strategy: "eager", Trigger: "onload"}
+	case cadence.Live:
+		return fillTag{Strategy: "live", Trigger: ""}
+	default: // Deferred{Server, *}
+		trig := "onload"
+		switch s.On {
+		case cadence.OnVisible:
+			trig = "onvisible"
+		case cadence.OnHover:
+			trig = "onhover"
+		}
+		return fillTag{Strategy: "deferred", Trigger: trig}
+	}
 }
