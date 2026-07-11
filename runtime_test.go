@@ -64,6 +64,27 @@ func TestStrategyForKindInferred(t *testing.T) {
 	}
 }
 
+func TestTagOfAllBranches(t *testing.T) {
+	cases := []struct {
+		name string
+		in   cadence.Strategy
+		want fillTag
+	}{
+		{"eager", cadence.Strategy{Kind: cadence.Eager}, fillTag{Strategy: "eager", Trigger: "onload"}},
+		{"live", cadence.Strategy{Kind: cadence.Live}, fillTag{Strategy: "live", Trigger: ""}},
+		{"deferred-onload", cadence.Strategy{Kind: cadence.Deferred, Where: cadence.Server, On: cadence.OnLoad}, fillTag{Strategy: "deferred", Trigger: "onload"}},
+		{"deferred-onvisible", cadence.Strategy{Kind: cadence.Deferred, Where: cadence.Server, On: cadence.OnVisible}, fillTag{Strategy: "deferred", Trigger: "onvisible"}},
+		{"deferred-onhover", cadence.Strategy{Kind: cadence.Deferred, Where: cadence.Server, On: cadence.OnHover}, fillTag{Strategy: "deferred", Trigger: "onhover"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tagOf(tc.in); got != tc.want {
+				t.Errorf("%s: tagOf(%+v) = %+v, want %+v", tc.name, tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestStrategyForPolicyOverrideAndClientReject(t *testing.T) {
 	p := NewPage(func(f *Frame) template.HTML { return "" })
 	p.Add(textRegion("a", "AAA")).Add(textRegion("b", "BBB"))
