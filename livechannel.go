@@ -62,7 +62,6 @@ func (lc LiveChannel) Deliver(w http.ResponseWriter, r *http.Request, p *Page) e
 		return err
 	}
 	sess := &LiveSession{regions: map[string]*regionState{}, outbox: make(chan serverMsg, 32)}
-	ids := make([]string, 0, len(p.liveRegions()))
 	for _, lr := range p.liveRegions() {
 		st, err := lr.Mount(ctx, nil)
 		if err != nil {
@@ -71,34 +70,55 @@ func (lc LiveChannel) Deliver(w http.ResponseWriter, r *http.Request, p *Page) e
 		}
 		tree := lr.Render(st)
 		sess.set(lr.ID(), &regionState{state: st, lastStatics: tree.Statics(), lastDynamics: tree.Dynamics()})
-		ids = append(ids, lr.ID())
 	}
 	lc.store().Put(token, sess)
 
 	doc := string(p.shell(&Frame{page: p, ctx: ctx}))
 	head, tail := splitBody(doc)
-	manifest, err := json.Marshal(map[string]any{
-		"ws":    liveWSPath(p.name),
-		"token": token,
-		"ids":   ids,
-	})
-	if err != nil {
-		return err
-	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if _, err := w.Write([]byte(head)); err != nil {
 		return err
 	}
-	if _, err := w.Write([]byte(`<script type="application/json" data-q-live>` + string(manifest) + `</script>`)); err != nil {
+	if _, err := w.Write([]byte(liveManifestJSON(p, token))); err != nil {
 		return err
 	}
 	_, err = w.Write([]byte(tail))
 	return err
 }
 
+// liveManifestJSON builds the live manifest the client shim reads to resume a
+// session: the WebSocket path, the resume token, and every live region id, as
+// a `<script type="application/json" data-q-live>` element. It is the single
+// place this payload is produced; Deliver and serveComposite both call it so
+// the manifest a fresh page load embeds and the one Deliver streams cannot
+// drift apart.
+func liveManifestJSON(p *Page, token string) string {
+	ids := make([]string, 0, len(p.liveOrder))
+	ids = append(ids, p.liveOrder...)
+	manifest, err := json.Marshal(map[string]any{
+		"ws":    liveWSPath(p.name),
+		"token": token,
+		"ids":   ids,
+	})
+	if err != nil {
+		// p.liveOrder is a []string and token is a string: this cannot fail.
+		manifest = []byte(`{}`)
+	}
+	return `<script type="application/json" data-q-live>` + string(manifest) + `</script>`
+}
+
 // Routes mounts the WebSocket endpoint and the long-poll fallback endpoints
-// for this page.
+// for this page. It stays in place (and P3 tests depend on it) until the
+// Task 6 cutover removes it in favor of callers using liveRoutes directly.
 func (lc LiveChannel) Routes(p *Page) map[string]http.Handler {
+	return lc.liveRoutes(p)
+}
+
+// liveRoutes builds the WebSocket endpoint and the long-poll fallback
+// endpoints for this page. Extracted from Routes so serveComposite can mount
+// live routes without going through the (soon to be removed) public Routes
+// name.
+func (lc LiveChannel) liveRoutes(p *Page) map[string]http.Handler {
 	return map[string]http.Handler{
 		liveWSPath(p.name):    lc.wsHandler(p),
 		livePollPath(p.name):  lc.pollHandler(p),

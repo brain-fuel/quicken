@@ -4,6 +4,7 @@ import (
 	"html/template"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -159,5 +160,49 @@ func TestServeCompositeDegradesClientStrategy(t *testing.T) {
 	}
 	if !strings.Contains(body, "CLIENT-CONTENT") {
 		t.Errorf("full content missing from degraded floor:\n%s", body)
+	}
+}
+
+func TestServeCompositeWithLiveRegion(t *testing.T) {
+	p := NewPage(func(f *Frame) template.HTML {
+		return template.HTML("<html><head>" + string(f.Head()) + "</head><body>" +
+			string(f.Slot("clock")) + "</body></html>")
+	})
+	p.AddLive(newTestClock("clock")) // LiveRegion whose first Render contains "TICK-0"
+
+	mux := http.NewServeMux()
+	serveComposite(mux, "/", p, nil) // nil policy: live region → Live
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+	body := rec.Body.String()
+
+	if !strings.Contains(body, `data-q-fill="clock" data-q-strategy="live"`) {
+		t.Errorf("live fill missing/mislabeled:\n%s", body)
+	}
+	if !strings.Contains(body, "TICK-0") {
+		t.Error("live region's first render must be in the floor (no-JS snapshot)")
+	}
+	if !strings.Contains(body, `data-q-live`) {
+		t.Error("live manifest script missing")
+	}
+	// A hardcoded unknown token (the brief's literal "token=x") cannot tell
+	// "route not mounted" apart from "route mounted, token rejected": once
+	// mounted, pollHandler already 404s any token its store does not
+	// recognize (see longpoll_test.go's "unknown token poll status" case,
+	// asserting exactly that), so "x" always 404s when the route IS mounted
+	// -- while an *unmounted* poll path instead falls through to the "/"
+	// composite handler and returns 200, not 404. That makes the literal
+	// == StatusNotFound check backwards. Use the real token this request's
+	// own manifest just minted instead, so a non-404 response demonstrates
+	// the route is mounted and wired to the very session the floor rendered.
+	m := regexp.MustCompile(`"token":"([^"]+)"`).FindStringSubmatch(body)
+	if m == nil {
+		t.Fatal("could not extract live token from manifest")
+	}
+	rec2 := httptest.NewRecorder()
+	mux.ServeHTTP(rec2, httptest.NewRequest("GET", liveBasePath("")+"/poll?token="+m[1], nil))
+	if rec2.Code == http.StatusNotFound {
+		t.Error("live poll route not mounted")
 	}
 }
