@@ -2,13 +2,35 @@ package quicken
 
 import (
 	"encoding/json"
+	"errors"
 	"strconv"
 	"strings"
 )
 
-// clientMsg is a message decoded from the client over the live connection.
-// Type is "event" (a user interaction dispatched to a live region) or
-// "resume" (reattach to a prior session using Token).
+// ClientMessage is the decoded client protocol. Resume and Event carry only
+// the fields valid for that operation; an impossible hybrid cannot enter the
+// runtime.
+//
+//goplus:derive off
+type ClientMessage enum {
+	ResumeMessage(token string)
+	EventMessage(region string, event string, payload Payload, token string)
+}
+
+// ServerMessage is the server protocol. Each alternative owns exactly its
+// valid payload, replacing the former struct with a string discriminator and
+// seven conditionally meaningful fields.
+//
+//goplus:derive off
+type ServerMessage enum {
+	FirstMessage(region string, tree Tree)
+	FullMessage(region string, tree Tree)
+	PatchMessage(region string, changed map[int]string)
+	ErrorMessage(region string, message string)
+}
+
+// clientMsg and serverMsg are deliberately confined JSON boundary DTOs.
+// They are never queued or interpreted as domain values.
 type clientMsg struct {
 	Type    string  `json:"type"`
 	Region  string  `json:"region,omitempty"`
@@ -17,65 +39,59 @@ type clientMsg struct {
 	Token   string  `json:"token,omitempty"`
 }
 
-// serverMsg is a message encoded to the client over the live connection.
-// Type is "first" (initial statics+dynamics for a region), "full" (a full
-// re-render, same shape as first), "patch" (only changed dynamic slots), or
-// "error".
 type serverMsg struct {
 	Type     string   `json:"type"`
 	Region   string   `json:"region"`
 	Statics  []string `json:"statics,omitempty"`
 	Dynamics []string `json:"dynamics,omitempty"`
-	// Changed maps dynamic slot index to its new value. json.Marshal encodes
-	// map[int]string keys as strings, so this serializes as e.g.
-	// {"0":"8"}; the client parses the key with parseInt.
-	Changed map[int]string `json:"changed,omitempty"`
-	Message string         `json:"message,omitempty"`
+	Changed  map[int]string `json:"changed,omitempty"`
+	Message  string   `json:"message,omitempty"`
 }
 
-// decodeClient parses a clientMsg from raw bytes received on the wire.
-func decodeClient(b []byte) (clientMsg, error) {
+func decodeClient(b []byte) (ClientMessage, error) {
 	var m clientMsg
-	err := json.Unmarshal(b, &m)
-	return m, err
+	if err := json.Unmarshal(b, &m); err != nil {
+		return nil, err
+	}
+	switch m.Type {
+	case "resume":
+		if m.Token == "" { return nil, errors.New("quicken: resume needs token") }
+		return ResumeMessage(m.Token), nil
+	case "event":
+		if m.Region == "" || m.Event == "" { return nil, errors.New("quicken: event needs region and event") }
+		return EventMessage(m.Region, m.Event, m.Payload, m.Token), nil
+	default:
+		return nil, errors.New("quicken: unknown client message type")
+	}
 }
 
-// encodeServer serializes a serverMsg for sending on the wire.
-func encodeServer(m serverMsg) ([]byte, error) { return json.Marshal(m) }
-
-// firstMsg builds the initial message for a region: its full statics and
-// dynamics, sent once when a client attaches.
-func firstMsg(region string, t Tree) serverMsg {
-	return serverMsg{Type: "first", Region: region, Statics: t.Statics(), Dynamics: t.Dynamics()}
+func encodeServer(m ServerMessage) ([]byte, error) {
+	var wire serverMsg
+	match m {
+	case FirstMessage(region, tree):
+		wire = serverMsg{Type: "first", Region: region, Statics: tree.Statics(), Dynamics: tree.Dynamics()}
+	case FullMessage(region, tree):
+		wire = serverMsg{Type: "full", Region: region, Statics: tree.Statics(), Dynamics: tree.Dynamics()}
+	case PatchMessage(region, changed):
+		wire = serverMsg{Type: "patch", Region: region, Changed: changed}
+	case ErrorMessage(region, message):
+		wire = serverMsg{Type: "error", Region: region, Message: message}
+	}
+	return json.Marshal(wire)
 }
 
-// fullMsg builds a full re-render message, same shape as firstMsg, sent when
-// a region's static shape has changed and a patch is not possible.
-func fullMsg(region string, t Tree) serverMsg {
-	return serverMsg{Type: "full", Region: region, Statics: t.Statics(), Dynamics: t.Dynamics()}
-}
-
-// patchMsg builds a message carrying only the dynamic slots that changed.
-func patchMsg(region string, changed map[int]string) serverMsg {
-	return serverMsg{Type: "patch", Region: region, Changed: changed}
-}
-
-// errorMsg builds an error message for a region.
-func errorMsg(region, message string) serverMsg {
-	return serverMsg{Type: "error", Region: region, Message: message}
-}
+func firstMsg(region string, t Tree) ServerMessage { return FirstMessage(region, t) }
+func fullMsg(region string, t Tree) ServerMessage { return FullMessage(region, t) }
+func patchMsg(region string, changed map[int]string) ServerMessage { return PatchMessage(region, changed) }
+func errorMsg(region, message string) ServerMessage { return ErrorMessage(region, message) }
 
 // renderLiveHTML stitches a Tree, wrapping each dynamic slot in a marker
-// element the client can address by index when applying a patch. It is kept
-// as the conformance oracle the client's stitchLive is checked against; it is
-// not called on the server hot path.
+// element the client can address by index when applying a patch.
 func renderLiveHTML(t Tree) string {
 	statics := t.Statics()
 	dynamics := t.Dynamics()
 	if len(dynamics) == 0 {
-		if len(statics) == 0 {
-			return ""
-		}
+		if len(statics) == 0 { return "" }
 		return statics[0]
 	}
 	var b strings.Builder

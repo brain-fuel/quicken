@@ -10,11 +10,12 @@ func TestDecodeClientEvent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Type != "event" || m.Region != "c" || m.Event != "inc" {
+	event, ok := m.(EventMessage)
+	if !ok || event.Region != "c" || event.Event != "inc" {
 		t.Fatalf("decoded = %+v", m)
 	}
-	if m.Payload["by"] != float64(2) {
-		t.Fatalf("payload by = %v", m.Payload["by"])
+	if event.Payload["by"] != float64(2) {
+		t.Fatalf("payload by = %v", event.Payload["by"])
 	}
 }
 
@@ -23,7 +24,8 @@ func TestDecodeClientResume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Type != "resume" || m.Token != "abc" {
+	resume, ok := m.(ResumeMessage)
+	if !ok || resume.Token != "abc" {
 		t.Fatalf("decoded = %+v", m)
 	}
 }
@@ -37,35 +39,39 @@ func TestDecodeClientRejectsGarbage(t *testing.T) {
 func TestFirstMsgCarriesStaticsAndDynamics(t *testing.T) {
 	tr := Slots([]string{"<b>", "</b>"}, []string{"7"})
 	m := firstMsg("c", tr)
-	if m.Type != "first" || m.Region != "c" {
+	first, ok := m.(FirstMessage)
+	if !ok || first.Region != "c" {
 		t.Fatalf("msg = %+v", m)
 	}
-	if len(m.Statics) != 2 || m.Statics[0] != "<b>" || m.Dynamics[0] != "7" {
-		t.Fatalf("statics/dynamics = %v %v", m.Statics, m.Dynamics)
+	if first.Tree.HTML() != "<b>7</b>" {
+		t.Fatalf("tree = %q", first.Tree.HTML())
 	}
 }
 
 func TestFullMsgCarriesStaticsAndDynamics(t *testing.T) {
 	tr := Slots([]string{"<b>", "</b>"}, []string{"7"})
 	m := fullMsg("c", tr)
-	if m.Type != "full" || m.Region != "c" {
+	full, ok := m.(FullMessage)
+	if !ok || full.Region != "c" {
 		t.Fatalf("msg = %+v", m)
 	}
-	if len(m.Statics) != 2 || m.Statics[0] != "<b>" || m.Dynamics[0] != "7" {
-		t.Fatalf("statics/dynamics = %v %v", m.Statics, m.Dynamics)
+	if full.Tree.HTML() != "<b>7</b>" {
+		t.Fatalf("tree = %q", full.Tree.HTML())
 	}
 }
 
 func TestPatchMsgOnlyChangedSlots(t *testing.T) {
 	m := patchMsg("c", map[int]string{0: "8"})
-	if m.Type != "patch" || m.Changed[0] != "8" {
+	patch, ok := m.(PatchMessage)
+	if !ok || patch.Changed[0] != "8" {
 		t.Fatalf("patch = %+v", m)
 	}
 }
 
 func TestErrorMsgCarriesMessage(t *testing.T) {
 	m := errorMsg("c", "boom")
-	if m.Type != "error" || m.Region != "c" || m.Message != "boom" {
+	failure, ok := m.(ErrorMessage)
+	if !ok || failure.Region != "c" || failure.Message != "boom" {
 		t.Fatalf("errorMsg = %+v", m)
 	}
 }

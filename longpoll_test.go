@@ -29,7 +29,7 @@ func mountLiveSession(t *testing.T, mux *http.ServeMux, lc LiveChannel, page *Pa
 	if err != nil {
 		t.Fatal(err)
 	}
-	sess := &LiveSession{regions: map[string]*regionState{}, outbox: make(chan serverMsg, 32)}
+	sess := &LiveSession{regions: map[string]*regionState{}, outbox: make(chan ServerMessage, 32)}
 	ctx := RenderContext{}
 	for _, lr := range page.liveRegions() {
 		st, err := lr.Mount(ctx, nil)
@@ -326,7 +326,7 @@ func TestLongPollFirstSendDrainsStaleOutboxMessages(t *testing.T) {
 	// before the client ever polls (so markFirstSent has not fired yet).
 	const capacity = 32
 	for i := 0; i < capacity; i++ {
-		sess.outbox <- serverMsg{Type: "patch", Region: "c", Changed: map[int]string{0: "stale"}}
+		sess.outbox <- patchMsg("c", map[int]string{0: "stale"})
 	}
 
 	start := time.Now()

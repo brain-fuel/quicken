@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"goforge.dev/cadence"
 )
 
 func demoPage() *Page {
@@ -29,7 +31,7 @@ func demoPage() *Page {
 // defaultResolve tags every region with the kind-inferred default a nil
 // Policy produces for a plain region (Deferred{Server, OnLoad}), so a test can
 // drive renderFloor without constructing a cadence.Policy.
-func defaultResolve(string) fillTag { return fillTag{Strategy: "deferred", Trigger: "onload"} }
+func defaultResolve(string) cadence.Interpretation { return cadence.AfterPaint{On: cadence.OnLoad{}} }
 
 func TestStreamDeliversShellSkeletonsFillsAndClose(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)

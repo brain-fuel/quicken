@@ -63,7 +63,7 @@ func FromMarkup(markup string) *Page {
 // a deferred region and vice versa).
 func (f *Frame) slotFor(kind, id string) template.HTML {
 	_, isLazy := f.page.regions[id]
-	_, isLive := f.page.live[id]
+	_, isLive := f.page.liveRegion(id)
 	if (kind == "lazy" && isLazy) || (kind == "live" && isLive) {
 		return f.Slot(id)
 	}

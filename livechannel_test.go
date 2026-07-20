@@ -328,7 +328,7 @@ func TestRenderFloorAndLivePropagatesWriteErrors(t *testing.T) {
 		live := &liveSetup{
 			lc:    LiveChannel{},
 			token: token,
-			sess:  &LiveSession{regions: map[string]*regionState{}, outbox: make(chan serverMsg, 32)},
+			sess:  &LiveSession{regions: map[string]*regionState{}, outbox: make(chan ServerMessage, 32)},
 		}
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		if err := renderFloorAndLive(w, req, page, defaultResolve, live); err == nil {

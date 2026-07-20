@@ -4,10 +4,11 @@
 package quicken
 
 import (
-	"encoding/json"
 	"io"
 	"net/http"
 	"time"
+
+	"goforge.dev/goplus/std/result"
 )
 
 // defaultPollTimeout is how long a poll blocks for the next message when
@@ -68,14 +69,13 @@ func (lc LiveChannel) pollHandler(p *Page) http.Handler {
 		if sess.markFirstSent() {
 			drainOutbox(sess)
 			for _, lr := range p.liveRegions() {
-				var fm serverMsg
+				var fm ServerMessage
 				ok := sess.withRegion(lr.ID(), func(rs *regionState) {
-					tree, renderOK := safeRender(lr, rs.state)
-					if !renderOK {
-						fm = errorMsg(lr.ID(), "region panicked")
-						return
-					}
-					fm = firstMsg(lr.ID(), Slots(tree.Statics(), rs.lastDynamics))
+					rendered := safeRender(lr, rs.state)
+					fm = result.Fold(rendered, result.ResultCases[Tree, RenderFailure, ServerMessage]{
+						Ok:  func(tree Tree) ServerMessage { return firstMsg(lr.ID(), Slots(tree.Statics(), rs.lastDynamics)) },
+						Err: func(failure RenderFailure) ServerMessage { return errorMsg(lr.ID(), Error(failure)) },
+					})
 				})
 				if ok {
 					select {
@@ -115,25 +115,40 @@ func (lc LiveChannel) eventHandler(p *Page) http.Handler {
 			http.Error(w, "bad body", http.StatusBadRequest)
 			return
 		}
-		var m clientMsg
-		if err := json.Unmarshal(body, &m); err != nil || m.Type != "event" {
+		m, err := decodeClient(body)
+		if err != nil {
 			http.Error(w, "bad event", http.StatusBadRequest)
 			return
 		}
-		sess, ok := lc.store().Get(m.Token)
+		var region, event, token string
+		var payload Payload
+		switch __gp_m0 := any(m).(type) {
+		case EventMessage:
+			rid := __gp_m0.Region
+			name := __gp_m0.Event
+			body := __gp_m0.Payload
+			tok := __gp_m0.Token
+			region, event, payload, token = rid, name, body, tok
+		case ResumeMessage:
+			http.Error(w, "bad event", http.StatusBadRequest)
+			return
+		default:
+			panic("goplus: impossible enum value in match")
+		}
+		sess, ok := lc.store().Get(token)
 		if !ok {
 			http.NotFound(w, r)
 			return
 		}
-		lr, ok := p.live[m.Region]
+		lr, ok := p.liveRegion(region)
 		if !ok {
 			http.NotFound(w, r)
 			return
 		}
 		ctx := RenderContext{Ctx: r.Context(), R: r}
-		var out serverMsg
-		found := sess.withRegion(m.Region, func(rs *regionState) {
-			out = lc.applyEvent(lr, ctx, rs, m)
+		var out ServerMessage
+		found := sess.withRegion(region, func(rs *regionState) {
+			out = lc.applyEvent(lr, ctx, rs, region, event, payload)
 		})
 		if !found {
 			http.NotFound(w, r)

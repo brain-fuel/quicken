@@ -12,6 +12,13 @@ server-held state over a WebSocket (with an HTTP long-poll fallback). The
 markup marker document and html/template helper authoring adapters have landed;
 explorer integration remains for a later phase.
 
+The runtime protocol is modeled with Go+ sums rather than string tags:
+`PageRegion` unifies static and stateful page entries, `ClientMessage` and
+`ServerMessage` admit only valid wire payloads, render failures travel through
+typed `Result`, and tree changes use Cadence's exhaustive `TreeDiff`. JSON
+structs exist only at the network boundary. Cadence owns strategy
+interpretation and generates the fallback and plain-region compatibility laws.
+
 Because the floor always ships every region's real content, SP2 governs *when
 and how the client reveals* that content, not *whether the server computes it*:
 first paint is fast, but the server still renders every region. True

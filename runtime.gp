@@ -1,29 +1,21 @@
 package quicken
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"time"
 
 	"goforge.dev/cadence"
+	"goforge.dev/goplus/std/result"
 )
-
-// fillTag labels a streamed region fill so the client shim knows when to
-// reveal it. Strategy is "eager", "deferred", or "live"; Trigger is
-// "onload", "onvisible", "onhover", or "" (live).
-type fillTag struct {
-	Strategy string
-	Trigger  string
-}
 
 // renderFloor writes the universal fallback floor: the shell head, then every
 // region's full content streamed into the document tail as a tagged fill with
 // an inline reveal script, then the shell tail. With scripting off the fills
 // stay visible after the body, so the page is fully readable; the shim
 // relocates them into their slots per strategy.
-func renderFloor(w http.ResponseWriter, r *http.Request, p *Page, resolve func(id string) fillTag) error {
+func renderFloor(w http.ResponseWriter, r *http.Request, p *Page, resolve func(id string) cadence.Interpretation) error {
 	return renderFloorAndLive(w, r, p, resolve, nil)
 }
 
@@ -39,23 +31,6 @@ type liveSetup struct {
 	sess  *LiveSession
 }
 
-// renderLiveFirst mounts and renders a live region's first state, recovering
-// a panic exactly like renderRegion does for deferred regions so one
-// misbehaving live region cannot take down the whole floor. A Mount error is
-// treated the same way. ok reports whether tree and st are valid.
-func renderLiveFirst(lr LiveRegion, ctx RenderContext) (tree Tree, st State, ok bool) {
-	defer func() {
-		if recover() != nil {
-			ok = false
-		}
-	}()
-	s, err := lr.Mount(ctx, nil)
-	if err != nil {
-		return Tree{}, nil, false
-	}
-	return lr.Render(s), s, true
-}
-
 // renderFloorAndLive is renderFloor's body, extended to also stream every
 // live region's first render into the floor (tagged "live") and, when live
 // is non-nil, register each live region's mounted state into live.sess and
@@ -63,7 +38,7 @@ func renderLiveFirst(lr LiveRegion, ctx RenderContext) (tree Tree, st State, ok 
 // resume the same session over the WebSocket. live is nil for the plain
 // deferred/eager floor (renderFloor above), so that path is byte-for-byte
 // unchanged.
-func renderFloorAndLive(w http.ResponseWriter, r *http.Request, p *Page, resolve func(id string) fillTag, live *liveSetup) error {
+func renderFloorAndLive(w http.ResponseWriter, r *http.Request, p *Page, resolve func(id string) cadence.Interpretation, live *liveSetup) error {
 	ctx := RenderContext{Ctx: r.Context(), R: r}
 	frame := &Frame{page: p, ctx: ctx}
 
@@ -76,23 +51,24 @@ func renderFloorAndLive(w http.ResponseWriter, r *http.Request, p *Page, resolve
 	}
 	flush(w)
 
-	type result struct {
+	type floorResult struct {
 		id   string
 		html string
 	}
-	results := make(chan result, len(p.order))
-	for _, id := range p.order {
+	staticIDs := p.staticIDs()
+	results := make(chan floorResult, len(staticIDs))
+	for _, id := range staticIDs {
 		id := id
-		region := p.regions[id]
-		go func() { results <- result{id: id, html: renderRegion(region, ctx)} }()
+		region, _ := p.staticRegion(id)
+		go func() { results <- floorResult{id: id, html: renderRegion(region, ctx)} }()
 	}
 
 	var done <-chan struct{}
 	if ctx.Ctx != nil {
 		done = ctx.Ctx.Done()
 	}
-	got := make(map[string]string, len(p.order))
-	for range p.order {
+	got := make(map[string]string, len(staticIDs))
+	for range staticIDs {
 		select {
 		case res := <-results:
 			got[res.id] = res.html
@@ -100,11 +76,11 @@ func renderFloorAndLive(w http.ResponseWriter, r *http.Request, p *Page, resolve
 			return ctx.Ctx.Err()
 		}
 	}
-	for _, id := range p.order { // page order: deterministic output
-		tag := resolve(id)
+	for _, id := range staticIDs { // page order: deterministic output
+		strategy, trigger := wireTag(resolve(id))
 		fill := fmt.Sprintf(
 			`<div data-q-fill="%s" data-q-strategy="%s" data-q-trigger="%s">%s</div><script>window.__quicken&&window.__quicken.reveal(%s)</script>`,
-			id, tag.Strategy, tag.Trigger, got[id], jsStringLiteral(id))
+			id, strategy, trigger, got[id], jsStringLiteral(id))
 		if _, err := io.WriteString(w, fill); err != nil {
 			return err
 		}
@@ -112,20 +88,24 @@ func renderFloorAndLive(w http.ResponseWriter, r *http.Request, p *Page, resolve
 	}
 
 	if live != nil {
-		liveTag := fillTag{Strategy: "live", Trigger: ""}
-		for _, id := range p.liveOrder { // page order: deterministic output
-			lr := p.live[id]
-			tree, st, ok := renderLiveFirst(lr, ctx)
+		for _, id := range p.liveIDs() { // page order: deterministic output
+			lr, _ := p.liveRegion(id)
+			mounted := renderLiveFirst(lr, ctx)
 			var html string
-			if ok {
-				html = tree.HTML()
-				live.sess.set(id, &regionState{state: st, lastStatics: tree.Statics(), lastDynamics: tree.Dynamics()})
-			} else {
-				html = fmt.Sprintf(`<div data-q-error>region %q failed to render</div>`, id)
-			}
+			result.Fold(mounted, result.ResultCases[mountedRegion, RenderFailure, bool]{
+				Ok: func(m mountedRegion) bool {
+					html = m.tree.HTML()
+					live.sess.set(id, &regionState{state: m.state, lastStatics: m.tree.Statics(), lastDynamics: m.tree.Dynamics()})
+					return true
+				},
+				Err: func(_ RenderFailure) bool {
+					html = fmt.Sprintf(`<div data-q-error>region %q failed to render</div>`, id)
+					return false
+				},
+			})
 			fill := fmt.Sprintf(
 				`<div data-q-fill="%s" data-q-strategy="%s" data-q-trigger="%s">%s</div><script>window.__quicken&&window.__quicken.reveal(%s)</script>`,
-				id, liveTag.Strategy, liveTag.Trigger, html, jsStringLiteral(id))
+				id, "live", "", html, jsStringLiteral(id))
 			if _, err := io.WriteString(w, fill); err != nil {
 				return err
 			}
@@ -149,56 +129,47 @@ func renderFloorAndLive(w http.ResponseWriter, r *http.Request, p *Page, resolve
 // interpreter, which SP2 does not yet provide. Live is only meaningful for a
 // region registered with AddLive; a Policy that assigns Live to a plain
 // region (registered with Add) is degraded to Eager, see below.
-func strategyFor(p *Page, pol cadence.Policy, id string, ctx cadence.RequestContext) (cadence.Strategy, error) {
+func strategyFor(p *Page, pol cadence.Policy, id string, ctx cadence.RequestContext) cadence.Interpretation {
 	var s cadence.Strategy
 	if pol == nil {
-		if _, live := p.live[id]; live {
-			s = cadence.Strategy{Kind: cadence.Live}
-		} else {
-			s = cadence.Strategy{Kind: cadence.Deferred, Where: cadence.Server, On: cadence.OnLoad}
+		match p.regionKind(id) {
+		case cadence.Stateful():
+			s = cadence.Live()
+		case cadence.Plain():
+			s = cadence.Deferred(cadence.Server(), cadence.OnLoad())
 		}
 	} else {
 		s = pol.StrategyFor(id, ctx, nil)
 	}
-	if s.Kind == cadence.Deferred && s.Where == cadence.Client {
-		return s, errors.New("quicken: Deferred{Client} strategy for region " + id + " requires the TEA interpreter (SP3), not available in SP2")
-	}
-	if s.Kind == cadence.Live {
-		if _, live := p.live[id]; !live {
-			// A plain region (Add, not AddLive) is not in p.live and never
-			// in p.liveOrder, so a "live" fill would never be tagged by
-			// reveal (which no-ops on "live") nor swapped by
-			// swapLiveSnapshots (which only walks p.liveOrder): with
-			// scripting on the slot would stay a stuck skeleton forever.
-			// Degrade to eager, exactly like an unsupported Deferred{Client}
-			// degrades below, so the floor still fills the region.
-			s = cadence.Strategy{Kind: cadence.Eager}
-		}
-	}
-	return s, nil
+	return cadence.Interpret(p.regionKind(id), s, ctx)
 }
 
-// tagOf maps a resolved cadence.Strategy to the fillTag the streamed floor
-// uses to label a region's fill. It is the sole resolver feeding the
-// deferred/eager fills renderFloorAndLive streams from p.order (resolve is
-// never called for a live region: those are tagged directly, since they are
-// always Live and never go through Policy resolution in SP2).
-func tagOf(s cadence.Strategy) fillTag {
-	switch s.Kind {
-	case cadence.Eager:
-		return fillTag{Strategy: "eager", Trigger: "onload"}
-	case cadence.Live:
-		return fillTag{Strategy: "live", Trigger: ""}
-	default: // Deferred{Server, *}
-		trig := "onload"
-		switch s.On {
-		case cadence.OnVisible:
-			trig = "onvisible"
-		case cadence.OnHover:
-			trig = "onhover"
-		}
-		return fillTag{Strategy: "deferred", Trigger: trig}
+// wireTag is the sole boundary that lowers semantic interpretations to the
+// client shim's string protocol.
+func wireTag(i cadence.Interpretation) (string, string) {
+	match i {
+	case cadence.Inline():
+		return "eager", "onload"
+	case cadence.AfterPaint(on):
+		return "deferred", triggerName(on)
+	case cadence.LiveTransport():
+		return "live", ""
+	case cadence.ClientCompute(_):
+		return "eager", "onload"
 	}
+	return "eager", "onload"
+}
+
+func triggerName(on cadence.Trigger) string {
+	match on {
+	case cadence.OnLoad():
+		return "onload"
+	case cadence.OnVisible():
+		return "onvisible"
+	case cadence.OnHover():
+		return "onhover"
+	}
+	return "onload"
 }
 
 // serveConfig is the resolved configuration Serve builds from its
@@ -260,24 +231,18 @@ func Serve(mux *http.ServeMux, path string, p *Page, pol cadence.Policy, opts ..
 	}
 	lc := LiveChannel{Store: cfg.store, pollTimeout: cfg.pollTimeout}
 
-	if len(p.liveOrder) > 0 {
+	if len(p.liveIDs()) > 0 {
 		for route, h := range lc.liveRoutes(p) {
 			mux.Handle(route, h)
 		}
 	}
 	mux.Handle(path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := cadence.RequestContext{Path: r.URL.Path}
-		resolve := func(id string) fillTag {
-			s, err := strategyFor(p, pol, id, ctx)
-			if err != nil {
-				// SP2-unsupported (Deferred{Client}): degrade to eager so the
-				// floor still shows full content. True client-compute is SP3.
-				return fillTag{Strategy: "eager", Trigger: "onload"}
-			}
-			return tagOf(s)
+		resolve := func(id string) cadence.Interpretation {
+			return strategyFor(p, pol, id, ctx)
 		}
 		var live *liveSetup
-		if len(p.liveOrder) > 0 {
+		if len(p.liveIDs()) > 0 {
 			token, err := newToken()
 			if err != nil {
 				http.Error(w, "session error", http.StatusInternalServerError)
@@ -286,7 +251,7 @@ func Serve(mux *http.ServeMux, path string, p *Page, pol cadence.Policy, opts ..
 			live = &liveSetup{
 				lc:    lc,
 				token: token,
-				sess:  &LiveSession{regions: map[string]*regionState{}, outbox: make(chan serverMsg, 32)},
+				sess:  &LiveSession{regions: map[string]*regionState{}, outbox: make(chan ServerMessage, 32)},
 			}
 		}
 		_ = renderFloorAndLive(w, r, p, resolve, live)

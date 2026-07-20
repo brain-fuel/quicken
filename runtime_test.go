@@ -33,13 +33,13 @@ func TestRenderFloorTagsEachFill(t *testing.T) {
 	})
 	p.Add(textRegion("a", "AAA")).Add(textRegion("b", "BBB"))
 
-	tags := map[string]fillTag{
-		"a": {Strategy: "eager", Trigger: "onload"},
-		"b": {Strategy: "deferred", Trigger: "onvisible"},
+	tags := map[string]cadence.Interpretation{
+		"a": cadence.Inline{},
+		"b": cadence.AfterPaint{On: cadence.OnVisible{}},
 	}
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/", nil)
-	if err := renderFloor(rec, req, p, func(id string) fillTag { return tags[id] }); err != nil {
+	if err := renderFloor(rec, req, p, func(id string) cadence.Interpretation { return tags[id] }); err != nil {
 		t.Fatalf("renderFloor: %v", err)
 	}
 	body := rec.Body.String()
@@ -63,34 +63,33 @@ func TestStrategyForKindInferred(t *testing.T) {
 	p := NewPage(func(f *Frame) template.HTML { return "" })
 	p.Add(textRegion("a", "AAA"))
 
-	s, err := strategyFor(p, nil, "a", cadence.RequestContext{})
-	if err != nil {
-		t.Fatalf("strategyFor: %v", err)
+	s := strategyFor(p, nil, "a", cadence.RequestContext{})
+	if _, ok := s.(cadence.AfterPaint); !ok {
+		t.Errorf("plain region interpretation = %T, want AfterPaint", s)
 	}
-	if s.Kind != cadence.Deferred || s.Where != cadence.Server || s.On != cadence.OnLoad {
-		t.Errorf("plain region default = %+v, want Deferred{Server,OnLoad}", s)
-	}
-	if tg := tagOf(s); tg.Strategy != "deferred" || tg.Trigger != "onload" {
-		t.Errorf("tagOf = %+v", tg)
+	if strategy, trigger := wireTag(s); strategy != "deferred" || trigger != "onload" {
+		t.Errorf("wireTag = %q/%q", strategy, trigger)
 	}
 }
 
 func TestTagOfAllBranches(t *testing.T) {
 	cases := []struct {
-		name string
-		in   cadence.Strategy
-		want fillTag
+		name     string
+		in       cadence.Interpretation
+		strategy string
+		trigger  string
 	}{
-		{"eager", cadence.Strategy{Kind: cadence.Eager}, fillTag{Strategy: "eager", Trigger: "onload"}},
-		{"live", cadence.Strategy{Kind: cadence.Live}, fillTag{Strategy: "live", Trigger: ""}},
-		{"deferred-onload", cadence.Strategy{Kind: cadence.Deferred, Where: cadence.Server, On: cadence.OnLoad}, fillTag{Strategy: "deferred", Trigger: "onload"}},
-		{"deferred-onvisible", cadence.Strategy{Kind: cadence.Deferred, Where: cadence.Server, On: cadence.OnVisible}, fillTag{Strategy: "deferred", Trigger: "onvisible"}},
-		{"deferred-onhover", cadence.Strategy{Kind: cadence.Deferred, Where: cadence.Server, On: cadence.OnHover}, fillTag{Strategy: "deferred", Trigger: "onhover"}},
+		{"eager", cadence.Inline{}, "eager", "onload"},
+		{"live", cadence.LiveTransport{}, "live", ""},
+		{"deferred-onload", cadence.AfterPaint{On: cadence.OnLoad{}}, "deferred", "onload"},
+		{"deferred-onvisible", cadence.AfterPaint{On: cadence.OnVisible{}}, "deferred", "onvisible"},
+		{"deferred-onhover", cadence.AfterPaint{On: cadence.OnHover{}}, "deferred", "onhover"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := tagOf(tc.in); got != tc.want {
-				t.Errorf("%s: tagOf(%+v) = %+v, want %+v", tc.name, tc.in, got, tc.want)
+			strategy, trigger := wireTag(tc.in)
+			if strategy != tc.strategy || trigger != tc.trigger {
+				t.Errorf("%s: wireTag = %q/%q, want %q/%q", tc.name, strategy, trigger, tc.strategy, tc.trigger)
 			}
 		})
 	}
@@ -104,8 +103,8 @@ func TestServeCompositeMixedStrategies(t *testing.T) {
 	p.Add(textRegion("hot", "HOT")).Add(textRegion("cold", "COLD"))
 
 	pol := cadence.Fixed(map[string]cadence.Strategy{
-		"hot":  {Kind: cadence.Eager},
-		"cold": {Kind: cadence.Deferred, Where: cadence.Server, On: cadence.OnVisible},
+		"hot":  cadence.Eager{},
+		"cold": cadence.Deferred{Where: cadence.Server{}, On: cadence.OnVisible{}},
 	})
 	mux := http.NewServeMux()
 	Serve(mux, "/", p, pol)
@@ -144,9 +143,9 @@ func TestMixedStrategyGolden(t *testing.T) {
 		Add(textRegion("hov", "HOVER-CONTENT"))
 
 	pol := cadence.Fixed(map[string]cadence.Strategy{
-		"eager": {Kind: cadence.Eager},
-		"vis":   {Kind: cadence.Deferred, Where: cadence.Server, On: cadence.OnVisible},
-		"hov":   {Kind: cadence.Deferred, Where: cadence.Server, On: cadence.OnHover},
+		"eager": cadence.Eager{},
+		"vis":   cadence.Deferred{Where: cadence.Server{}, On: cadence.OnVisible{}},
+		"hov":   cadence.Deferred{Where: cadence.Server{}, On: cadence.OnHover{}},
 	})
 	mux := http.NewServeMux()
 	Serve(mux, "/", p, pol)
@@ -175,15 +174,15 @@ func TestStrategyForPolicyOverrideAndClientReject(t *testing.T) {
 	p.Add(textRegion("a", "AAA")).Add(textRegion("b", "BBB"))
 
 	pol := cadence.Fixed(map[string]cadence.Strategy{
-		"a": {Kind: cadence.Eager},
-		"b": {Kind: cadence.Deferred, Where: cadence.Client, On: cadence.OnLoad},
+		"a": cadence.Eager{},
+		"b": cadence.Deferred{Where: cadence.Client{}, On: cadence.OnLoad{}},
 	})
-	s, err := strategyFor(p, pol, "a", cadence.RequestContext{})
-	if err != nil || s.Kind != cadence.Eager {
-		t.Fatalf("override a: %+v err=%v", s, err)
+	s := strategyFor(p, pol, "a", cadence.RequestContext{})
+	if _, ok := s.(cadence.Inline); !ok {
+		t.Fatalf("override a: %T", s)
 	}
-	if _, err := strategyFor(p, pol, "b", cadence.RequestContext{}); err == nil {
-		t.Error("Deferred{Client} must be rejected in SP2")
+	if _, ok := strategyFor(p, pol, "b", cadence.RequestContext{}).(cadence.ClientCompute); !ok {
+		t.Error("Deferred{Client} must remain explicit as ClientCompute")
 	}
 }
 
@@ -194,7 +193,7 @@ func TestServeCompositeDegradesClientStrategy(t *testing.T) {
 	p.Add(textRegion("c", "CLIENT-CONTENT"))
 
 	pol := cadence.Fixed(map[string]cadence.Strategy{
-		"c": {Kind: cadence.Deferred, Where: cadence.Client, On: cadence.OnLoad},
+		"c": cadence.Deferred{Where: cadence.Client{}, On: cadence.OnLoad{}},
 	})
 	mux := http.NewServeMux()
 	Serve(mux, "/", p, pol)
@@ -226,7 +225,7 @@ func TestServeCompositeDegradesLiveOnPlainRegion(t *testing.T) {
 	})
 	p.Add(textRegion("p", "PLAIN-CONTENT"))
 
-	pol := cadence.Uniform(cadence.Strategy{Kind: cadence.Live})
+	pol := cadence.Uniform(cadence.Live{})
 	mux := http.NewServeMux()
 	Serve(mux, "/", p, pol)
 

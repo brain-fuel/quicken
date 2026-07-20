@@ -6,6 +6,8 @@ package quicken
 import (
 	"html/template"
 	"strings"
+
+	"goforge.dev/cadence"
 )
 
 // Shell renders the full HTML document for a page. It places each region's
@@ -14,19 +16,105 @@ import (
 // closing body tag.
 type Shell func(f *Frame) template.HTML
 
-// Page is a lazy page: a shell plus its registered regions.
+// PageRegion is one registered page capability. StaticRegion can render a
+// floor value; StatefulRegion additionally mounts resumable state.
+//
+//goplus:enum PageRegion
+type PageRegion interface{ isPageRegion() }
+
+//goplus:variant (PageRegion) StaticRegion(region Region)
+type StaticRegion struct {
+	Region Region
+}
+
+func (StaticRegion) isPageRegion() {}
+
+//goplus:variant (PageRegion) StatefulRegion(region LiveRegion)
+type StatefulRegion struct {
+	Region LiveRegion
+}
+
+func (StatefulRegion) isPageRegion() {}
+
+// PageRegionCases selects one handler per PageRegion variant for Fold.
+type PageRegionCases[R any] struct {
+	StaticRegion   func(region Region) R
+	StatefulRegion func(region LiveRegion) R
+}
+
+// Fold reduces PageRegion by one-level case analysis.
+func Fold[R any](p PageRegion, cs PageRegionCases[R]) R {
+	switch m := any(p).(type) {
+	case StaticRegion:
+		return cs.StaticRegion(m.Region)
+	case StatefulRegion:
+		return cs.StatefulRegion(m.Region)
+	default:
+		panic("goplus: impossible enum value in Fold")
+	}
+}
+
+// PageRegionEqOverrides carries optional per-variant hooks for PageRegionEqualWith.
+// A hook returning handled=false falls through to the derived comparison.
+type PageRegionEqOverrides struct {
+	StaticRegion   func(x, y StaticRegion) (eq, handled bool)
+	StatefulRegion func(x, y StatefulRegion) (eq, handled bool)
+}
+
+// PageRegionEqualWith reports structural equality of a and b under ov.
+func PageRegionEqualWith(a, b PageRegion, ov PageRegionEqOverrides) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	switch x := any(a).(type) {
+	case StaticRegion:
+		y, ok := any(b).(StaticRegion)
+		if !ok {
+			return false
+		}
+		if ov.StaticRegion != nil {
+			if eq, handled := ov.StaticRegion(x, y); handled {
+				return eq
+			}
+		}
+		if x.Region != y.Region {
+			return false
+		}
+		return true
+	case StatefulRegion:
+		y, ok := any(b).(StatefulRegion)
+		if !ok {
+			return false
+		}
+		if ov.StatefulRegion != nil {
+			if eq, handled := ov.StatefulRegion(x, y); handled {
+				return eq
+			}
+		}
+		if x.Region != y.Region {
+			return false
+		}
+		return true
+	}
+	return false
+}
+
+// PageRegionEqual reports structural equality of a and b.
+func PageRegionEqual(a, b PageRegion) bool {
+	return PageRegionEqualWith(a, b, PageRegionEqOverrides{})
+}
+
+// Page is a lazy page: a shell plus one ordered registry of region sums.
 type Page struct {
-	name      string
-	shell     Shell
-	regions   map[string]Region
-	order     []string
-	live      map[string]LiveRegion
-	liveOrder []string
+	name    string
+	shell   Shell
+	regions map[string]PageRegion
+	order   []string
 }
 
 // NewPage creates a page with the given shell.
 func NewPage(shell Shell) *Page {
-	return &Page{shell: shell, regions: map[string]Region{}, live: map[string]LiveRegion{}}
+	return &Page{shell: shell, regions: map[string]PageRegion{}}
 }
 
 // Named sets the page's name, used to namespace its live endpoints (the
@@ -51,10 +139,7 @@ func (p *Page) Add(r Region) *Page {
 	if _, ok := p.regions[id]; ok {
 		panic("quicken: duplicate region id " + id)
 	}
-	if _, ok := p.live[id]; ok {
-		panic("quicken: duplicate region id " + id)
-	}
-	p.regions[id] = r
+	p.regions[id] = StaticRegion{Region: r}
 	p.order = append(p.order, id)
 	return p
 }
@@ -70,20 +155,98 @@ func (p *Page) AddLive(r LiveRegion) *Page {
 	if _, ok := p.regions[id]; ok {
 		panic("quicken: duplicate region id " + id)
 	}
-	if _, ok := p.live[id]; ok {
-		panic("quicken: duplicate region id " + id)
-	}
-	p.live[id] = r
-	p.liveOrder = append(p.liveOrder, id)
+	p.regions[id] = StatefulRegion{Region: r}
+	p.order = append(p.order, id)
 	return p
 }
 
 func (p *Page) liveRegions() []LiveRegion {
-	out := make([]LiveRegion, 0, len(p.liveOrder))
-	for _, id := range p.liveOrder {
-		out = append(out, p.live[id])
+	var out []LiveRegion
+	for _, id := range p.order {
+		switch __gp_m0 := any(p.regions[id]).(type) {
+		case StatefulRegion:
+			r := __gp_m0.Region
+			out = append(out, r)
+		case StaticRegion:
+		default:
+			panic("goplus: impossible enum value in match")
+		}
 	}
 	return out
+}
+
+func (p *Page) liveIDs() []string {
+	ids := make([]string, 0, len(p.order))
+	for _, id := range p.order {
+		switch any(p.regions[id]).(type) {
+		case StatefulRegion:
+			ids = append(ids, id)
+		case StaticRegion:
+		default:
+			panic("goplus: impossible enum value in match")
+		}
+	}
+	return ids
+}
+
+func (p *Page) staticIDs() []string {
+	ids := make([]string, 0, len(p.order))
+	for _, id := range p.order {
+		switch any(p.regions[id]).(type) {
+		case StaticRegion:
+			ids = append(ids, id)
+		case StatefulRegion:
+		default:
+			panic("goplus: impossible enum value in match")
+		}
+	}
+	return ids
+}
+
+func (p *Page) staticRegion(id string) (Region, bool) {
+	entry, ok := p.regions[id]
+	if !ok {
+		return nil, false
+	}
+	switch __gp_m3 := any(entry).(type) {
+	case StaticRegion:
+		r := __gp_m3.Region
+		return r, true
+	case StatefulRegion:
+		return nil, false
+	default:
+		panic("goplus: impossible enum value in match")
+	}
+	return nil, false
+}
+
+func (p *Page) liveRegion(id string) (LiveRegion, bool) {
+	entry, ok := p.regions[id]
+	if !ok {
+		return nil, false
+	}
+	switch __gp_m4 := any(entry).(type) {
+	case StatefulRegion:
+		r := __gp_m4.Region
+		return r, true
+	case StaticRegion:
+		return nil, false
+	default:
+		panic("goplus: impossible enum value in match")
+	}
+	return nil, false
+}
+
+func (p *Page) regionKind(id string) cadence.RegionKind {
+	switch any(p.regions[id]).(type) {
+	case StatefulRegion:
+		return cadence.Stateful{}
+	case StaticRegion:
+		return cadence.Plain{}
+	default:
+		panic("goplus: impossible enum value in match")
+	}
+	return cadence.Plain{}
 }
 
 // Frame is handed to a Shell so it can place region skeletons and the shim.
@@ -100,13 +263,19 @@ func (f *Frame) Head() template.HTML {
 // Slot returns the placeholder for the region with the given id: a slot
 // element carrying the region's skeleton, which the transport later fills.
 func (f *Frame) Slot(id string) template.HTML {
-	if r, ok := f.page.regions[id]; ok {
-		sk := r.Skeleton(f.ctx).HTML()
-		return template.HTML(`<div id="q-slot-` + id + `" data-q-slot data-q-pending>` + sk + `</div>`)
-	}
-	if lr, ok := f.page.live[id]; ok {
-		sk := lr.Skeleton(f.ctx).HTML()
-		return template.HTML(`<div id="q-slot-` + id + `" data-q-slot data-q-live data-q-pending>` + sk + `</div>`)
+	if entry, ok := f.page.regions[id]; ok {
+		switch __gp_m6 := any(entry).(type) {
+		case StaticRegion:
+			r := __gp_m6.Region
+			sk := r.Skeleton(f.ctx).HTML()
+			return template.HTML(`<div id="q-slot-` + id + `" data-q-slot data-q-pending>` + sk + `</div>`)
+		case StatefulRegion:
+			r := __gp_m6.Region
+			sk := r.Skeleton(f.ctx).HTML()
+			return template.HTML(`<div id="q-slot-` + id + `" data-q-slot data-q-live data-q-pending>` + sk + `</div>`)
+		default:
+			panic("goplus: impossible enum value in match")
+		}
 	}
 	esc := template.HTMLEscapeString(id)
 	return template.HTML(`<div id="q-slot-` + esc + `" data-q-slot data-q-missing></div>`)

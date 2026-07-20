@@ -8,6 +8,9 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"goforge.dev/cadence"
+	"goforge.dev/goplus/std/result"
 )
 
 // LiveChannel is the live transport: a WebSocket carries the first render and
@@ -62,15 +65,14 @@ func liveWSPath(name string) string {
 // place this payload is produced, so the manifest a page load embeds always
 // matches the routes Serve mounts.
 func liveManifestJSON(p *Page, token string) string {
-	ids := make([]string, 0, len(p.liveOrder))
-	ids = append(ids, p.liveOrder...)
+	ids := p.liveIDs()
 	manifest, err := json.Marshal(map[string]any{
 		"ws":    liveWSPath(p.name),
 		"token": token,
 		"ids":   ids,
 	})
 	if err != nil {
-		// p.liveOrder is a []string and token is a string: this cannot fail.
+		// ids is a []string and token is a string: this cannot fail.
 		manifest = []byte(`{}`)
 	}
 	return `<script type="application/json" data-q-live>` + string(manifest) + `</script>`
@@ -107,35 +109,45 @@ func (lc LiveChannel) serve(conn *wsConn, p *Page, ctx RenderContext) {
 		return
 	}
 	msg, err := decodeClient(first)
-	if err != nil || msg.Type != "resume" {
+	if err != nil {
 		lc.send(conn, errorMsg("", "expected resume"))
 		return
 	}
-	sess, ok := lc.store().Get(msg.Token)
+	var token string
+	switch __gp_m0 := any(msg).(type) {
+	case ResumeMessage:
+		t := __gp_m0.Token
+		token = t
+	case EventMessage:
+		lc.send(conn, errorMsg("", "expected resume"))
+		return
+	default:
+		panic("goplus: impossible enum value in match")
+	}
+	sess, ok := lc.store().Get(token)
 	if !ok {
 		lc.send(conn, errorMsg("", "unknown session"))
 		return
 	}
 	for _, lr := range p.liveRegions() {
-		var tree Tree
-		var renderOK bool
+		var rendered result.Result[Tree, RenderFailure]
 		found := sess.withRegion(lr.ID(), func(rs *regionState) {
-			tree, renderOK = safeRender(lr, rs.state)
-			if renderOK {
-				rs.lastStatics = tree.Statics()
-				rs.lastDynamics = tree.Dynamics()
-			}
+			rendered = safeRender(lr, rs.state)
 		})
 		if !found {
 			continue
 		}
-		if !renderOK {
-			if err := lc.send(conn, errorMsg(lr.ID(), "region panicked")); err != nil {
-				return
-			}
-			continue
-		}
-		if err := lc.send(conn, firstMsg(lr.ID(), tree)); err != nil {
+		msg := result.Fold(rendered, result.ResultCases[Tree, RenderFailure, ServerMessage]{
+			Ok: func(tree Tree) ServerMessage {
+				sess.withRegion(lr.ID(), func(rs *regionState) {
+					rs.lastStatics = tree.Statics()
+					rs.lastDynamics = tree.Dynamics()
+				})
+				return firstMsg(lr.ID(), tree)
+			},
+			Err: func(failure RenderFailure) ServerMessage { return errorMsg(lr.ID(), Error(failure)) },
+		})
+		if err := lc.send(conn, msg); err != nil {
 			return
 		}
 	}
@@ -145,23 +157,32 @@ func (lc LiveChannel) serve(conn *wsConn, p *Page, ctx RenderContext) {
 			return
 		}
 		m, err := decodeClient(raw)
-		if err != nil || m.Type != "event" {
+		if err != nil {
 			continue
 		}
-		if err := lc.handleEvent(conn, p, ctx, sess, m); err != nil {
-			return
+		switch __gp_m1 := any(m).(type) {
+		case EventMessage:
+			region := __gp_m1.Region
+			event := __gp_m1.Event
+			payload := __gp_m1.Payload
+			if err := lc.handleEvent(conn, p, ctx, sess, region, event, payload); err != nil {
+				return
+			}
+		case ResumeMessage:
+		default:
+			panic("goplus: impossible enum value in match")
 		}
 	}
 }
 
-func (lc LiveChannel) handleEvent(conn *wsConn, p *Page, ctx RenderContext, sess *LiveSession, m clientMsg) error {
-	lr, ok := p.live[m.Region]
+func (lc LiveChannel) handleEvent(conn *wsConn, p *Page, ctx RenderContext, sess *LiveSession, region, event string, payload Payload) error {
+	lr, ok := p.liveRegion(region)
 	if !ok {
 		return nil
 	}
-	var out serverMsg
-	found := sess.withRegion(m.Region, func(rs *regionState) {
-		out = lc.applyEvent(lr, ctx, rs, m)
+	var out ServerMessage
+	found := sess.withRegion(region, func(rs *regionState) {
+		out = lc.applyEvent(lr, ctx, rs, region, event, payload)
 	})
 	if !found {
 		return nil
@@ -171,44 +192,29 @@ func (lc LiveChannel) handleEvent(conn *wsConn, p *Page, ctx RenderContext, sess
 
 // applyEvent runs HandleEvent then Render and diffs, recovering panics into an
 // error message. It updates rs in place on success.
-func (lc LiveChannel) applyEvent(lr LiveRegion, ctx RenderContext, rs *regionState, m clientMsg) (out serverMsg) {
+func (lc LiveChannel) applyEvent(lr LiveRegion, ctx RenderContext, rs *regionState, region, event string, payload Payload) (out ServerMessage) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			out = errorMsg(m.Region, "region panicked")
+			out = errorMsg(region, "region panicked")
 		}
 	}()
-	newState, err := lr.HandleEvent(ctx, m.Event, m.Payload, rs.state)
+	newState, err := lr.HandleEvent(ctx, event, payload, rs.state)
 	if err != nil {
-		return errorMsg(m.Region, err.Error())
+		return errorMsg(region, err.Error())
 	}
 	tree := lr.Render(newState)
 	prev := Slots(rs.lastStatics, rs.lastDynamics)
-	changed, full := tree.Diff(prev)
 	rs.state = newState
 	rs.lastStatics = tree.Statics()
 	rs.lastDynamics = tree.Dynamics()
-	if full {
-		return fullMsg(m.Region, tree)
-	}
-	return patchMsg(m.Region, changed)
+	return cadence.TreeDiffFold(tree.Diff(prev), cadence.TreeDiffCases[ServerMessage]{
+		Unchanged:    func() ServerMessage { return patchMsg(region, map[int]string{}) },
+		DynamicPatch: func(changed map[int]string) ServerMessage { return patchMsg(region, changed) },
+		Replace:      func(replacement Tree) ServerMessage { return fullMsg(region, replacement) },
+	})
 }
 
-// safeRender renders a region, converting a panic into ok=false so the caller
-// can emit an error message instead of dropping the connection. It exists
-// because the WS resume loop and the long-poll first-send loop both call
-// Render before any event has occurred, outside applyEvent's own panic
-// recovery, and a panicking first render should not tear down the whole
-// connection or poll.
-func safeRender(lr LiveRegion, s State) (t Tree, ok bool) {
-	defer func() {
-		if recover() != nil {
-			ok = false
-		}
-	}()
-	return lr.Render(s), true
-}
-
-func (lc LiveChannel) send(conn *wsConn, m serverMsg) error {
+func (lc LiveChannel) send(conn *wsConn, m ServerMessage) error {
 	b, err := encodeServer(m)
 	if err != nil {
 		return err

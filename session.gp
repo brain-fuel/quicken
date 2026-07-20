@@ -22,7 +22,7 @@ type regionState struct {
 type LiveSession struct {
 	mu        sync.Mutex
 	regions   map[string]*regionState
-	outbox    chan serverMsg
+	outbox    chan ServerMessage
 	firstSent bool
 }
 

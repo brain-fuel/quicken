@@ -3,6 +3,8 @@ package quicken
 import (
 	"html/template"
 	"strings"
+
+	"goforge.dev/cadence"
 )
 
 // Shell renders the full HTML document for a page. It places each region's
@@ -11,19 +13,24 @@ import (
 // closing body tag.
 type Shell func(f *Frame) template.HTML
 
-// Page is a lazy page: a shell plus its registered regions.
+// PageRegion is one registered page capability. StaticRegion can render a
+// floor value; StatefulRegion additionally mounts resumable state.
+type PageRegion enum {
+	StaticRegion(region Region)
+	StatefulRegion(region LiveRegion)
+}
+
+// Page is a lazy page: a shell plus one ordered registry of region sums.
 type Page struct {
-	name      string
-	shell     Shell
-	regions   map[string]Region
-	order     []string
-	live      map[string]LiveRegion
-	liveOrder []string
+	name    string
+	shell   Shell
+	regions map[string]PageRegion
+	order   []string
 }
 
 // NewPage creates a page with the given shell.
 func NewPage(shell Shell) *Page {
-	return &Page{shell: shell, regions: map[string]Region{}, live: map[string]LiveRegion{}}
+	return &Page{shell: shell, regions: map[string]PageRegion{}}
 }
 
 // Named sets the page's name, used to namespace its live endpoints (the
@@ -48,10 +55,7 @@ func (p *Page) Add(r Region) *Page {
 	if _, ok := p.regions[id]; ok {
 		panic("quicken: duplicate region id " + id)
 	}
-	if _, ok := p.live[id]; ok {
-		panic("quicken: duplicate region id " + id)
-	}
-	p.regions[id] = r
+	p.regions[id] = StaticRegion(r)
 	p.order = append(p.order, id)
 	return p
 }
@@ -67,20 +71,83 @@ func (p *Page) AddLive(r LiveRegion) *Page {
 	if _, ok := p.regions[id]; ok {
 		panic("quicken: duplicate region id " + id)
 	}
-	if _, ok := p.live[id]; ok {
-		panic("quicken: duplicate region id " + id)
-	}
-	p.live[id] = r
-	p.liveOrder = append(p.liveOrder, id)
+	p.regions[id] = StatefulRegion(r)
+	p.order = append(p.order, id)
 	return p
 }
 
 func (p *Page) liveRegions() []LiveRegion {
-	out := make([]LiveRegion, 0, len(p.liveOrder))
-	for _, id := range p.liveOrder {
-		out = append(out, p.live[id])
+	var out []LiveRegion
+	for _, id := range p.order {
+		match p.regions[id] {
+		case StatefulRegion(r):
+			out = append(out, r)
+		case StaticRegion(_):
+		}
 	}
 	return out
+}
+
+func (p *Page) liveIDs() []string {
+	ids := make([]string, 0, len(p.order))
+	for _, id := range p.order {
+		match p.regions[id] {
+		case StatefulRegion(_):
+			ids = append(ids, id)
+		case StaticRegion(_):
+		}
+	}
+	return ids
+}
+
+func (p *Page) staticIDs() []string {
+	ids := make([]string, 0, len(p.order))
+	for _, id := range p.order {
+		match p.regions[id] {
+		case StaticRegion(_):
+			ids = append(ids, id)
+		case StatefulRegion(_):
+		}
+	}
+	return ids
+}
+
+func (p *Page) staticRegion(id string) (Region, bool) {
+	entry, ok := p.regions[id]
+	if !ok {
+		return nil, false
+	}
+	match entry {
+	case StaticRegion(r):
+		return r, true
+	case StatefulRegion(_):
+		return nil, false
+	}
+	return nil, false
+}
+
+func (p *Page) liveRegion(id string) (LiveRegion, bool) {
+	entry, ok := p.regions[id]
+	if !ok {
+		return nil, false
+	}
+	match entry {
+	case StatefulRegion(r):
+		return r, true
+	case StaticRegion(_):
+		return nil, false
+	}
+	return nil, false
+}
+
+func (p *Page) regionKind(id string) cadence.RegionKind {
+	match p.regions[id] {
+	case StatefulRegion(_):
+		return cadence.Stateful()
+	case StaticRegion(_):
+		return cadence.Plain()
+	}
+	return cadence.Plain()
 }
 
 // Frame is handed to a Shell so it can place region skeletons and the shim.
@@ -97,13 +164,15 @@ func (f *Frame) Head() template.HTML {
 // Slot returns the placeholder for the region with the given id: a slot
 // element carrying the region's skeleton, which the transport later fills.
 func (f *Frame) Slot(id string) template.HTML {
-	if r, ok := f.page.regions[id]; ok {
-		sk := r.Skeleton(f.ctx).HTML()
-		return template.HTML(`<div id="q-slot-` + id + `" data-q-slot data-q-pending>` + sk + `</div>`)
-	}
-	if lr, ok := f.page.live[id]; ok {
-		sk := lr.Skeleton(f.ctx).HTML()
-		return template.HTML(`<div id="q-slot-` + id + `" data-q-slot data-q-live data-q-pending>` + sk + `</div>`)
+	if entry, ok := f.page.regions[id]; ok {
+		match entry {
+		case StaticRegion(r):
+			sk := r.Skeleton(f.ctx).HTML()
+			return template.HTML(`<div id="q-slot-` + id + `" data-q-slot data-q-pending>` + sk + `</div>`)
+		case StatefulRegion(r):
+			sk := r.Skeleton(f.ctx).HTML()
+			return template.HTML(`<div id="q-slot-` + id + `" data-q-slot data-q-live data-q-pending>` + sk + `</div>`)
+		}
 	}
 	esc := template.HTMLEscapeString(id)
 	return template.HTML(`<div id="q-slot-` + esc + `" data-q-slot data-q-missing></div>`)
