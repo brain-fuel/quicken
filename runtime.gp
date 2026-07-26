@@ -157,7 +157,6 @@ func wireTag(i cadence.Interpretation) (string, string) {
 	case cadence.ClientCompute(_):
 		return "eager", "onload"
 	}
-	return "eager", "onload"
 }
 
 func triggerName(on cadence.Trigger) string {
@@ -169,7 +168,6 @@ func triggerName(on cadence.Trigger) string {
 	case cadence.OnHover():
 		return "onhover"
 	}
-	return "onload"
 }
 
 // serveConfig is the resolved configuration Serve builds from its

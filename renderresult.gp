@@ -21,7 +21,6 @@ func (f RenderFailure) Error() string {
 	case RenderPanicked():
 		return "render panicked"
 	}
-	return "render failed"
 }
 
 type mountedRegion struct {

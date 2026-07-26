@@ -123,7 +123,6 @@ func (p *Page) staticRegion(id string) (Region, bool) {
 	case StatefulRegion(_):
 		return nil, false
 	}
-	return nil, false
 }
 
 func (p *Page) liveRegion(id string) (LiveRegion, bool) {
@@ -137,7 +136,6 @@ func (p *Page) liveRegion(id string) (LiveRegion, bool) {
 	case StaticRegion(_):
 		return nil, false
 	}
-	return nil, false
 }
 
 func (p *Page) regionKind(id string) cadence.RegionKind {
@@ -147,7 +145,6 @@ func (p *Page) regionKind(id string) cadence.RegionKind {
 	case StaticRegion(_):
 		return cadence.Plain()
 	}
-	return cadence.Plain()
 }
 
 // Frame is handed to a Shell so it can place region skeletons and the shim.

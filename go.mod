@@ -1,10 +1,17 @@
 module goforge.dev/quicken
 
-go 1.26
+go 1.26.0
 
 require (
 	github.com/chromedp/chromedp v0.15.1
 	goforge.dev/cadence v0.3.0
+)
+
+require (
+	goforge.dev/goplus v0.139.1 // indirect
+	golang.org/x/mod v0.38.0 // indirect
+	golang.org/x/sync v0.22.0 // indirect
+	golang.org/x/tools v0.48.0 // indirect
 )
 
 require (
@@ -14,6 +21,8 @@ require (
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect
 	github.com/gobwas/ws v1.4.0 // indirect
-	goforge.dev/goplus/std v0.16.0
-	golang.org/x/sys v0.42.0 // indirect
+	goforge.dev/goplus/std v0.204.0
+	golang.org/x/sys v0.47.0 // indirect
 )
+
+tool goforge.dev/goplus/cmd/goplus
