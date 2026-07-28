@@ -1,0 +1,113 @@
+package native
+
+import (
+	"image/color"
+
+	"gioui.org/layout"
+	"gioui.org/unit"
+	"gioui.org/widget"
+	cadencestyle "goforge.dev/cadence/style"
+)
+
+type Palette struct {
+	Default   color.NRGBA
+	Primary   color.NRGBA
+	Secondary color.NRGBA
+	Accent    color.NRGBA
+	Success   color.NRGBA
+	Warning   color.NRGBA
+	Danger    color.NRGBA
+	Muted     color.NRGBA
+	Surface   color.NRGBA
+}
+
+func DefaultPalette() Palette {
+	return Palette{
+		Default: color.NRGBA{R: 244, G: 241, B: 222, A: 255},
+		Primary: color.NRGBA{R: 129, G: 178, B: 154, A: 255},
+		Secondary: color.NRGBA{R: 242, G: 204, B: 143, A: 255},
+		Accent: color.NRGBA{R: 224, G: 122, B: 95, A: 255},
+		Success: color.NRGBA{R: 112, G: 162, B: 136, A: 255},
+		Warning: color.NRGBA{R: 242, G: 204, B: 143, A: 255},
+		Danger: color.NRGBA{R: 209, G: 73, B: 91, A: 255},
+		Muted: color.NRGBA{R: 141, G: 153, B: 174, A: 255},
+		Surface: color.NRGBA{R: 38, G: 50, B: 56, A: 255},
+	}
+}
+
+func ColorFor(role cadencestyle.ColorRole, palette Palette) color.NRGBA {
+	return cadencestyle.ColorRoleFold(role, cadencestyle.ColorRoleCases[color.NRGBA]{
+		ColorDefault: func() color.NRGBA { return palette.Default },
+		ColorPrimary: func() color.NRGBA { return palette.Primary },
+		ColorSecondary: func() color.NRGBA { return palette.Secondary },
+		ColorAccent: func() color.NRGBA { return palette.Accent },
+		ColorSuccess: func() color.NRGBA { return palette.Success },
+		ColorWarning: func() color.NRGBA { return palette.Warning },
+		ColorDanger: func() color.NRGBA { return palette.Danger },
+		ColorMuted: func() color.NRGBA { return palette.Muted },
+		ColorSurface: func() color.NRGBA { return palette.Surface },
+	})
+}
+
+func Styled(
+	gtx layout.Context,
+	value cadencestyle.Style,
+	palette Palette,
+	child layout.Widget,
+) layout.Dimensions {
+	if value.Hidden {
+		return layout.Dimensions{}
+	}
+	margin := layout.Inset{
+		Top: unit.Dp(value.Margin.Top),
+		Right: unit.Dp(value.Margin.Right),
+		Bottom: unit.Dp(value.Margin.Bottom),
+		Left: unit.Dp(value.Margin.Left),
+	}
+	return margin.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		padding := layout.Inset{
+			Top: unit.Dp(value.Padding.Top),
+			Right: unit.Dp(value.Padding.Right),
+			Bottom: unit.Dp(value.Padding.Bottom),
+			Left: unit.Dp(value.Padding.Left),
+		}
+		content := func(gtx layout.Context) layout.Dimensions {
+			if value.Width > 0 {
+				width := gtx.Dp(unit.Dp(value.Width))
+				gtx.Constraints.Min.X = width
+				if gtx.Constraints.Max.X < width {
+					gtx.Constraints.Min.X = gtx.Constraints.Max.X
+				}
+			}
+			if value.Height > 0 {
+				height := gtx.Dp(unit.Dp(value.Height))
+				gtx.Constraints.Min.Y = height
+				if gtx.Constraints.Max.Y < height {
+					gtx.Constraints.Min.Y = gtx.Constraints.Max.Y
+				}
+			}
+			return padding.Layout(gtx, child)
+		}
+		return cadencestyle.BorderFold(value.Border, cadencestyle.BorderCases[layout.Dimensions]{
+			BorderNone: func() layout.Dimensions { return content(gtx) },
+			BorderSubtle: func() layout.Dimensions {
+				return widget.Border{
+					Color: ColorFor(cadencestyle.ColorMuted(), palette),
+					Width: unit.Dp(1),
+				}.Layout(gtx, content)
+			},
+			BorderStrong: func() layout.Dimensions {
+				return widget.Border{
+					Color: ColorFor(cadencestyle.ColorPrimary(), palette),
+					Width: unit.Dp(2),
+				}.Layout(gtx, content)
+			},
+			BorderRounded: func() layout.Dimensions {
+				return widget.Border{
+					Color: ColorFor(cadencestyle.ColorPrimary(), palette),
+					Width: unit.Dp(1), CornerRadius: unit.Dp(6),
+				}.Layout(gtx, content)
+			},
+		})
+	})
+}

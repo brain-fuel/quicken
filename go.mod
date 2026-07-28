@@ -1,10 +1,10 @@
-module goforge.dev/quicken
+module goforge.dev/quicken/web
 
 go 1.26.0
 
 require (
 	github.com/chromedp/chromedp v0.15.1
-	goforge.dev/cadence v0.3.0
+	goforge.dev/cadence v0.4.0
 )
 
 require (

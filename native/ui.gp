@@ -1,0 +1,130 @@
+package native
+
+import (
+	"gioui.org/layout"
+	"gioui.org/widget"
+	"gioui.org/widget/material"
+)
+
+// UI owns mechanical Gio widget state keyed by stable semantic IDs. Domain
+// state remains in the Cadence model.
+type UI[Msg any] struct {
+	Theme      *material.Theme
+	clickables map[string]*widget.Clickable
+	editors    map[string]*widget.Editor
+	external   map[string]string
+	seen       map[string]bool
+	pending    []Msg
+}
+
+func NewUI[Msg any](theme *material.Theme) *UI[Msg] {
+	if theme == nil {
+		theme = material.NewTheme()
+	}
+	return &UI[Msg]{
+		Theme: theme,
+		clickables: map[string]*widget.Clickable{},
+		editors: map[string]*widget.Editor{},
+		external: map[string]string{},
+		seen: map[string]bool{},
+	}
+}
+
+func (u *UI[Msg]) BeginFrame() {
+	u.pending = u.pending[:0]
+	u.seen = map[string]bool{}
+}
+
+func (u *UI[Msg]) EndFrame() []Msg {
+	for key := range u.clickables {
+		if !u.seen[key] {
+			delete(u.clickables, key)
+		}
+	}
+	for key := range u.editors {
+		if !u.seen[key] {
+			delete(u.editors, key)
+			delete(u.external, key)
+		}
+	}
+	return append([]Msg(nil), u.pending...)
+}
+
+func (u *UI[Msg]) Queue(message Msg) {
+	u.pending = append(u.pending, message)
+}
+
+func (u *UI[Msg]) Label(gtx layout.Context, value string) layout.Dimensions {
+	return material.Body1(u.Theme, value).Layout(gtx)
+}
+
+func (u *UI[Msg]) Heading(gtx layout.Context, value string) layout.Dimensions {
+	return material.H6(u.Theme, value).Layout(gtx)
+}
+
+func (u *UI[Msg]) Button(
+	gtx layout.Context,
+	key, label string,
+	message Msg,
+) layout.Dimensions {
+	button := u.clickable(key)
+	for button.Clicked(gtx) {
+		u.Queue(message)
+	}
+	return material.Button(u.Theme, button, label).Layout(gtx)
+}
+
+func (u *UI[Msg]) Checkbox(
+	gtx layout.Context,
+	key, label string,
+	checked bool,
+	message Msg,
+) layout.Dimensions {
+	mark := "[ ] "
+	if checked {
+		mark = "[x] "
+	}
+	return u.Button(gtx, key, mark+label, message)
+}
+
+func (u *UI[Msg]) Editor(
+	gtx layout.Context,
+	key, value, hint string,
+	singleLine bool,
+	changed func(string) Msg,
+) layout.Dimensions {
+	editor := u.editor(key)
+	if u.external[key] != value && editor.Text() != value {
+		editor.SetText(value)
+	}
+	u.external[key] = value
+	editor.SingleLine = singleLine
+	before := editor.Text()
+	dimensions := material.Editor(u.Theme, editor, hint).Layout(gtx)
+	after := editor.Text()
+	if after != before && changed != nil {
+		u.Queue(changed(after))
+		u.external[key] = after
+	}
+	return dimensions
+}
+
+func (u *UI[Msg]) clickable(key string) *widget.Clickable {
+	u.seen[key] = true
+	value := u.clickables[key]
+	if value == nil {
+		value = &widget.Clickable{}
+		u.clickables[key] = value
+	}
+	return value
+}
+
+func (u *UI[Msg]) editor(key string) *widget.Editor {
+	u.seen[key] = true
+	value := u.editors[key]
+	if value == nil {
+		value = &widget.Editor{}
+		u.editors[key] = value
+	}
+	return value
+}

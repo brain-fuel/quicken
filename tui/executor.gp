@@ -1,0 +1,151 @@
+package tui
+
+import (
+	"sync"
+	"time"
+
+	tea "charm.land/bubbletea/v2"
+	"goforge.dev/cadence/program"
+)
+
+const TerminalQuitEffect = "cadence.terminal.quit"
+
+type cadenceMessage[Msg any] struct {
+	Message Msg
+}
+
+type executeCommand[Msg any] struct {
+	Command program.Cmd[Msg]
+}
+
+type EffectHandler[Msg any] interface {
+	Execute(program.Cmd[Msg]) tea.Cmd
+	Cancel(string)
+}
+
+type EffectHandlerFunc[Msg any] func(program.Cmd[Msg]) tea.Cmd
+
+func (f EffectHandlerFunc[Msg]) Execute(command program.Cmd[Msg]) tea.Cmd {
+	return f(command)
+}
+
+func (f EffectHandlerFunc[Msg]) Cancel(string) {}
+
+type Executor[Msg any] struct {
+	handler EffectHandler[Msg]
+	mu      sync.Mutex
+	cancel  map[string]chan struct{}
+}
+
+func NewExecutor[Msg any](handler EffectHandler[Msg]) *Executor[Msg] {
+	return &Executor[Msg]{
+		handler: handler,
+		cancel: map[string]chan struct{}{},
+	}
+}
+
+func Send[Msg any](message Msg) tea.Cmd {
+	return func() tea.Msg { return cadenceMessage[Msg]{Message: message} }
+}
+
+func Quit[Msg any]() program.Cmd[Msg] {
+	return program.Effect[Msg](
+		"", program.CapabilityTerminal(), TerminalQuitEffect, nil,
+	)
+}
+
+func (e *Executor[Msg]) Command(command program.Cmd[Msg]) tea.Cmd {
+	switch program.CommandKindName(command.Kind()) {
+	case "none":
+		return nil
+	case "emit":
+		return Send(command.Message())
+	case "batch":
+		commands := command.Commands()
+		lowered := make([]tea.Cmd, 0, len(commands))
+		for _, child := range commands {
+			lowered = append(lowered, e.Command(child))
+		}
+		return tea.Batch(lowered...)
+	case "sequence":
+		commands := command.Commands()
+		lowered := make([]tea.Cmd, 0, len(commands))
+		for _, child := range commands {
+			lowered = append(lowered, e.Command(child))
+		}
+		return tea.Sequence(lowered...)
+	case "after":
+		children := command.Commands()
+		if len(children) == 0 {
+			return nil
+		}
+		cancel := e.replaceCancel(command.Key())
+		delay := command.Delay()
+		child := children[0]
+		return func() tea.Msg {
+			timer := time.NewTimer(delay)
+			defer timer.Stop()
+			select {
+			case <-timer.C:
+				e.clearCancel(command.Key(), cancel)
+				return executeCommand[Msg]{Command: child}
+			case <-cancel:
+				return nil
+			}
+		}
+	case "cancel":
+		e.cancelKey(command.Key())
+		if e.handler != nil {
+			e.handler.Cancel(command.Key())
+		}
+		return nil
+	case "effect":
+		if command.Name() == TerminalQuitEffect {
+			return tea.Quit
+		}
+		if e.handler != nil {
+			return e.handler.Execute(command)
+		}
+		return nil
+	}
+	return nil
+}
+
+func (e *Executor[Msg]) replaceCancel(key string) chan struct{} {
+	channel := make(chan struct{})
+	if key == "" {
+		return channel
+	}
+	e.mu.Lock()
+	previous := e.cancel[key]
+	e.cancel[key] = channel
+	e.mu.Unlock()
+	if previous != nil {
+		close(previous)
+	}
+	return channel
+}
+
+func (e *Executor[Msg]) clearCancel(key string, channel chan struct{}) {
+	if key == "" {
+		return
+	}
+	e.mu.Lock()
+	if e.cancel[key] == channel {
+		delete(e.cancel, key)
+	}
+	e.mu.Unlock()
+}
+
+func (e *Executor[Msg]) cancelKey(key string) {
+	if key == "" {
+		return
+	}
+	e.mu.Lock()
+	channel := e.cancel[key]
+	delete(e.cancel, key)
+	e.mu.Unlock()
+	if channel != nil {
+		close(channel)
+	}
+}

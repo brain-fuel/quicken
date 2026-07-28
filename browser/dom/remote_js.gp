@@ -1,0 +1,310 @@
+//go:build js && wasm
+
+package dom
+
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+	"sync"
+	"syscall/js"
+	"time"
+
+	"goforge.dev/cadence/program"
+	browser "goforge.dev/quicken/web/browser"
+)
+
+type RemoteExecutor[Msg any] struct {
+	Manifest browser.Manifest
+	Fallback program.Executor[Msg]
+	mu       sync.Mutex
+	revision uint64
+	cancel   map[string]func()
+}
+
+func NewRemoteExecutor[Msg any](
+	manifest browser.Manifest,
+	fallback program.Executor[Msg],
+) *RemoteExecutor[Msg] {
+	return &RemoteExecutor[Msg]{
+		Manifest: manifest, Fallback: fallback,
+		revision: manifest.InitialRevision,
+		cancel: map[string]func(){},
+	}
+}
+
+func (e *RemoteExecutor[Msg]) Execute(cmd program.Cmd[Msg], dispatch program.Dispatch[Msg]) {
+	e.run(cmd, dispatch, func() {})
+}
+
+func (e *RemoteExecutor[Msg]) run(
+	cmd program.Cmd[Msg],
+	dispatch program.Dispatch[Msg],
+	done func(),
+) {
+	switch program.CommandKindName(cmd.Kind()) {
+	case "none":
+		done()
+	case "emit":
+		dispatch(cmd.Message())
+		done()
+	case "batch":
+		commands := cmd.Commands()
+		if len(commands) == 0 {
+			done()
+			return
+		}
+		var mu sync.Mutex
+		remaining := len(commands)
+		for _, child := range commands {
+			current := child
+			go e.run(current, dispatch, func() {
+				mu.Lock()
+				remaining--
+				last := remaining == 0
+				mu.Unlock()
+				if last {
+					done()
+				}
+			})
+		}
+	case "sequence":
+		e.runSequence(cmd.Commands(), dispatch, done)
+	case "after":
+		children := cmd.Commands()
+		if len(children) == 0 {
+			done()
+			return
+		}
+		timer := time.AfterFunc(cmd.Delay(), func() {
+			e.clearCancel(cmd.Key())
+			e.run(children[0], dispatch, done)
+		})
+		e.setCancel(cmd.Key(), func() {
+			timer.Stop()
+			done()
+		})
+	case "cancel":
+		e.cancelKey(cmd.Key())
+		done()
+	case "effect":
+		if cmd.Name() != browser.RemoteEffectName {
+			if e.Fallback != nil {
+				e.Fallback.Execute(cmd, dispatch)
+			}
+			done()
+			return
+		}
+		spec, ok := cmd.Payload().(browser.RemoteEffect[Msg])
+		if !ok {
+			done()
+			return
+		}
+		e.fetch(spec, dispatch, done)
+	default:
+		done()
+	}
+}
+
+func (e *RemoteExecutor[Msg]) runSequence(
+	commands []program.Cmd[Msg],
+	dispatch program.Dispatch[Msg],
+	done func(),
+) {
+	if len(commands) == 0 {
+		done()
+		return
+	}
+	e.run(commands[0], dispatch, func() {
+		e.runSequence(commands[1:], dispatch, done)
+	})
+}
+
+func (e *RemoteExecutor[Msg]) fetch(
+	spec browser.RemoteEffect[Msg],
+	dispatch program.Dispatch[Msg],
+	done func(),
+) {
+	if e.Manifest.Endpoints.Command == "" {
+		dispatch(spec.Failure(browser.PublicError{
+			Code: "missing-endpoint",
+			Message: "remote command endpoint is unavailable",
+		}))
+		done()
+		return
+	}
+	controller := js.Global().Get("AbortController").New()
+	e.setCancel(spec.RequestID, func() {
+		controller.Call("abort")
+		done()
+	})
+	go func() {
+		defer e.clearCancel(spec.RequestID)
+		defer done()
+		request := browser.CommandRequest{
+			ProtocolVersion: browser.CommandProtocolVersion,
+			AppID: e.Manifest.AppID,
+			ProgramID: e.Manifest.ProgramID,
+			InstanceID: e.Manifest.InstanceID,
+			RequestID: spec.RequestID,
+			Command: spec.Command,
+			Revision: e.currentRevision(),
+			Payload: spec.Payload,
+		}
+		encoded, err := json.Marshal(request)
+		if err != nil {
+			e.dispatchFailure(spec, dispatch, "encoding-failed", "command request could not be encoded", false)
+			return
+		}
+		headers := map[string]any{
+			"Content-Type": "application/json",
+			"Accept": "application/json",
+			"X-Cadence-CSRF": csrfCookie(),
+		}
+		options := map[string]any{
+			"method": "POST",
+			"headers": headers,
+			"body": string(encoded),
+			"credentials": "same-origin",
+			"signal": controller.Get("signal"),
+		}
+		responseValue, err := awaitPromise(js.Global().Call(
+			"fetch",
+			e.Manifest.Endpoints.Command,
+			js.ValueOf(options),
+		))
+		if err != nil {
+			e.dispatchFailure(spec, dispatch, "network-failed", "remote command failed", true)
+			return
+		}
+		if !responseValue.Get("ok").Bool() {
+			e.dispatchFailure(
+				spec, dispatch, "http-failed",
+				fmt.Sprintf("remote command returned HTTP %d", responseValue.Get("status").Int()),
+				responseValue.Get("status").Int() >= 500,
+			)
+			return
+		}
+		payloadValue, err := awaitPromise(responseValue.Call("json"))
+		if err != nil {
+			e.dispatchFailure(spec, dispatch, "invalid-response", "remote response is invalid", false)
+			return
+		}
+		payloadJSON := js.Global().Get("JSON").Call("stringify", payloadValue).String()
+		var response browser.CommandResponse
+		if err := json.Unmarshal([]byte(payloadJSON), &response); err != nil {
+			e.dispatchFailure(spec, dispatch, "invalid-response", "remote response is invalid", false)
+			return
+		}
+		if response.ProtocolVersion != browser.CommandProtocolVersion ||
+			response.RequestID != spec.RequestID {
+			e.dispatchFailure(spec, dispatch, "protocol-mismatch", "remote response identity mismatch", false)
+			return
+		}
+		e.setRevision(response.Revision)
+		if response.Error != nil {
+			dispatch(spec.Failure(*response.Error))
+			return
+		}
+		msg, err := spec.Success(response.Result)
+		if err != nil {
+			e.dispatchFailure(spec, dispatch, "decode-failed", "remote result could not be decoded", false)
+			return
+		}
+		dispatch(msg)
+	}()
+}
+
+func (e *RemoteExecutor[Msg]) dispatchFailure(
+	spec browser.RemoteEffect[Msg],
+	dispatch program.Dispatch[Msg],
+	code, message string,
+	retryable bool,
+) {
+	dispatch(spec.Failure(browser.PublicError{
+		Code: code, Message: message, Retryable: retryable,
+	}))
+}
+
+func (e *RemoteExecutor[Msg]) currentRevision() uint64 {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.revision
+}
+
+func (e *RemoteExecutor[Msg]) setRevision(revision uint64) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if revision > e.revision {
+		e.revision = revision
+	}
+}
+
+func (e *RemoteExecutor[Msg]) setCancel(key string, cancel func()) {
+	if key == "" {
+		return
+	}
+	e.mu.Lock()
+	previous := e.cancel[key]
+	e.cancel[key] = cancel
+	e.mu.Unlock()
+	if previous != nil {
+		previous()
+	}
+}
+
+func (e *RemoteExecutor[Msg]) clearCancel(key string) {
+	if key == "" {
+		return
+	}
+	e.mu.Lock()
+	delete(e.cancel, key)
+	e.mu.Unlock()
+}
+
+func (e *RemoteExecutor[Msg]) cancelKey(key string) {
+	if key == "" {
+		return
+	}
+	e.mu.Lock()
+	cancel := e.cancel[key]
+	delete(e.cancel, key)
+	e.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+func csrfCookie() string {
+	for _, part := range strings.Split(js.Global().Get("document").Get("cookie").String(), ";") {
+		pair := strings.SplitN(strings.TrimSpace(part), "=", 2)
+		if len(pair) == 2 && pair[0] == "cadence_csrf" {
+			return pair[1]
+		}
+	}
+	return ""
+}
+
+type promiseResult struct {
+	value js.Value
+	err   error
+}
+
+func awaitPromise(promise js.Value) (js.Value, error) {
+	channel := make(chan promiseResult, 1)
+	var success js.Func
+	var failure js.Func
+	success = js.FuncOf(func(this js.Value, args []js.Value) any {
+		channel <- promiseResult{value: args[0]}
+		return nil
+	})
+	failure = js.FuncOf(func(this js.Value, args []js.Value) any {
+		channel <- promiseResult{err: fmt.Errorf("%s", args[0].String())}
+		return nil
+	})
+	promise.Call("then", success).Call("catch", failure)
+	result := <-channel
+	success.Release()
+	failure.Release()
+	return result.value, result.err
+}

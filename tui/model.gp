@@ -1,0 +1,103 @@
+package tui
+
+import (
+	"fmt"
+
+	tea "charm.land/bubbletea/v2"
+	"goforge.dev/cadence/program"
+)
+
+type NativeMapper[Msg any] func(tea.Msg) (Msg, bool)
+
+// Model implements tea.Model while retaining the application's typed Cadence
+// model and update function.
+type Model[State any, Msg any] struct {
+	logic   program.Logic[State, Msg]
+	state   State
+	view    program.View[State, Msg, tea.View]
+	mapper  NativeMapper[Msg]
+	executor *Executor[Msg]
+	initial program.Cmd[Msg]
+}
+
+func NewModel[State any, Msg any](
+	logic program.Logic[State, Msg],
+	view program.View[State, Msg, tea.View],
+	mapper NativeMapper[Msg],
+	handler EffectHandler[Msg],
+) *Model[State, Msg] {
+	if logic.Init == nil || logic.Update == nil || view == nil {
+		panic("quicken/tui: logic and view must be non-nil")
+	}
+	step := logic.Init()
+	return &Model[State, Msg]{
+		logic: logic,
+		state: step.Model,
+		view: view,
+		mapper: mapper,
+		executor: NewExecutor(handler),
+		initial: step.Command,
+	}
+}
+
+func (m *Model[State, Msg]) Init() tea.Cmd {
+	command := m.initial
+	m.initial = program.None[Msg]()
+	return m.executor.Command(command)
+}
+
+func (m *Model[State, Msg]) Update(message tea.Msg) (tea.Model, tea.Cmd) {
+	if typed, ok := message.(cadenceMessage[Msg]); ok {
+		return m.apply(typed.Message)
+	}
+	if execute, ok := message.(executeCommand[Msg]); ok {
+		return m, m.executor.Command(execute.Command)
+	}
+	if m.mapper != nil {
+		if mapped, ok := m.mapper(message); ok {
+			return m.apply(mapped)
+		}
+	}
+	return m, nil
+}
+
+func (m *Model[State, Msg]) apply(message Msg) (tea.Model, tea.Cmd) {
+	step := m.logic.Update(m.state, message)
+	m.state = step.Model
+	return m, m.executor.Command(step.Command)
+}
+
+func (m *Model[State, Msg]) View() tea.View {
+	return m.view(m.state)
+}
+
+func (m *Model[State, Msg]) State() State {
+	return m.state
+}
+
+func StringView[State any, Msg any](render func(State) string) program.View[State, Msg, tea.View] {
+	return func(state State) tea.View {
+		return tea.NewView(render(state))
+	}
+}
+
+func Run[State any, Msg any](
+	logic program.Logic[State, Msg],
+	view program.View[State, Msg, tea.View],
+	mapper NativeMapper[Msg],
+	handler EffectHandler[Msg],
+	options ...tea.ProgramOption,
+) (State, error) {
+	model := NewModel(logic, view, mapper, handler)
+	result, err := tea.NewProgram(model, options...).Run()
+	if err != nil {
+		var zero State
+		return zero, err
+	}
+	final, ok := result.(*Model[State, Msg])
+	if !ok {
+		var zero State
+		return zero, fmt.Errorf("quicken/tui: final model has unexpected type")
+	}
+	return final.State(), nil
+}

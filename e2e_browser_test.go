@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/chromedp/chromedp"
-	"goforge.dev/quicken"
+	quicken "goforge.dev/quicken/web"
 )
 
 // TestRegionRevealInBrowser loads a page in a real browser and asserts the

@@ -1,5 +1,11 @@
 # Quicken semantic roadmap: steps 6–8
 
+The authoritative cross-project platform plan now lives at
+[`../docs/superpowers/plans/2026-07-28-cadence-quicken-fullstack-ui.md`](../docs/superpowers/plans/2026-07-28-cadence-quicken-fullstack-ui.md).
+This roadmap remains the source for the current transport typestate work, but
+the root plan governs the coordinated Cadence API redesign and the browser,
+Bubble Tea, and Gio interpreters.
+
 Steps 1–5 established the algebra needed by the remaining work: `PageRegion`,
 `ClientMessage`, `ServerMessage`, `TreeDiff`, `RenderFailure`, Cadence
 `Interpretation`, and the Cadence semantics laws. The next work should preserve

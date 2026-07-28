@@ -1,0 +1,82 @@
+package browser
+
+import (
+	"encoding/json"
+	"fmt"
+)
+
+const LiveProtocolVersion = 1
+
+const (
+	LiveResumeType   = "resume"
+	LiveEventType    = "event"
+	LiveSnapshotType = "snapshot"
+	LiveErrorType    = "error"
+)
+
+type LiveClientEnvelope struct {
+	ProtocolVersion int             `json:"protocol_version"`
+	Type            string          `json:"type"`
+	AppID           string          `json:"app_id"`
+	ProgramID       string          `json:"program_id"`
+	InstanceID      string          `json:"instance_id"`
+	Token           string          `json:"token"`
+	RequestID       string          `json:"request_id,omitempty"`
+	Revision        uint64          `json:"revision"`
+	Message         json.RawMessage `json:"message,omitempty"`
+}
+
+type LiveServerEnvelope struct {
+	ProtocolVersion int             `json:"protocol_version"`
+	Type            string          `json:"type"`
+	AppID           string          `json:"app_id"`
+	ProgramID       string          `json:"program_id"`
+	InstanceID      string          `json:"instance_id"`
+	RequestID       string          `json:"request_id,omitempty"`
+	Revision        uint64          `json:"revision"`
+	Model           json.RawMessage `json:"model,omitempty"`
+	Error           *PublicError    `json:"error,omitempty"`
+}
+
+func (m LiveClientEnvelope) Validate() error {
+	if m.ProtocolVersion != LiveProtocolVersion {
+		return fmt.Errorf("quicken/web/browser: unsupported live protocol %d", m.ProtocolVersion)
+	}
+	if m.AppID == "" || m.ProgramID == "" || m.InstanceID == "" || m.Token == "" {
+		return fmt.Errorf("quicken/web/browser: incomplete live client identity")
+	}
+	switch m.Type {
+	case LiveResumeType:
+		return nil
+	case LiveEventType:
+		if m.RequestID == "" || !json.Valid(m.Message) {
+			return fmt.Errorf("quicken/web/browser: live event needs request ID and typed message")
+		}
+		return nil
+	default:
+		return fmt.Errorf("quicken/web/browser: unknown live client type %q", m.Type)
+	}
+}
+
+func (m LiveServerEnvelope) Validate() error {
+	if m.ProtocolVersion != LiveProtocolVersion {
+		return fmt.Errorf("quicken/web/browser: unsupported live protocol %d", m.ProtocolVersion)
+	}
+	if m.AppID == "" || m.ProgramID == "" || m.InstanceID == "" {
+		return fmt.Errorf("quicken/web/browser: incomplete live server identity")
+	}
+	switch m.Type {
+	case LiveSnapshotType:
+		if !json.Valid(m.Model) {
+			return fmt.Errorf("quicken/web/browser: live snapshot model is invalid")
+		}
+		return nil
+	case LiveErrorType:
+		if m.Error == nil {
+			return fmt.Errorf("quicken/web/browser: live error payload is missing")
+		}
+		return nil
+	default:
+		return fmt.Errorf("quicken/web/browser: unknown live server type %q", m.Type)
+	}
+}

@@ -1,0 +1,91 @@
+package tui
+
+import (
+	lipgloss "charm.land/lipgloss/v2"
+	cadencestyle "goforge.dev/cadence/style"
+)
+
+type Palette struct {
+	Default   string
+	Primary   string
+	Secondary string
+	Accent    string
+	Success   string
+	Warning   string
+	Danger    string
+	Muted     string
+	Surface   string
+}
+
+func DefaultPalette() Palette {
+	return Palette{
+		Default: "#f4f1de",
+		Primary: "#81b29a",
+		Secondary: "#f2cc8f",
+		Accent: "#e07a5f",
+		Success: "#70a288",
+		Warning: "#f2cc8f",
+		Danger: "#d1495b",
+		Muted: "#8d99ae",
+		Surface: "#263238",
+	}
+}
+
+func LowerStyle(value cadencestyle.Style, palette Palette) lipgloss.Style {
+	out := lipgloss.NewStyle()
+	foreground := colorFor(value.Foreground, palette)
+	background := colorFor(value.Background, palette)
+	if foreground != "" {
+		out = out.Foreground(lipgloss.Color(foreground))
+	}
+	if background != "" {
+		out = out.Background(lipgloss.Color(background))
+	}
+	out = cadencestyle.EmphasisFold(value.Emphasis, cadencestyle.EmphasisCases[lipgloss.Style]{
+		EmphasisDefault: func() lipgloss.Style { return out },
+		EmphasisStrong: func() lipgloss.Style { return out.Bold(true) },
+		EmphasisSubtle: func() lipgloss.Style { return out.Faint(true) },
+		EmphasisCode: func() lipgloss.Style { return out.Bold(true) },
+	})
+	out = cadencestyle.AlignmentFold(value.Alignment, cadencestyle.AlignmentCases[lipgloss.Style]{
+		AlignStart: func() lipgloss.Style { return out.Align(lipgloss.Left) },
+		AlignCenter: func() lipgloss.Style { return out.Align(lipgloss.Center) },
+		AlignEnd: func() lipgloss.Style { return out.Align(lipgloss.Right) },
+		AlignStretch: func() lipgloss.Style { return out },
+	})
+	out = cadencestyle.BorderFold(value.Border, cadencestyle.BorderCases[lipgloss.Style]{
+		BorderNone: func() lipgloss.Style { return out },
+		BorderSubtle: func() lipgloss.Style { return out.Border(lipgloss.NormalBorder()) },
+		BorderStrong: func() lipgloss.Style { return out.Border(lipgloss.ThickBorder()) },
+		BorderRounded: func() lipgloss.Style { return out.Border(lipgloss.RoundedBorder()) },
+	})
+	out = out.Padding(
+		value.Padding.Top, value.Padding.Right,
+		value.Padding.Bottom, value.Padding.Left,
+	)
+	out = out.Margin(
+		value.Margin.Top, value.Margin.Right,
+		value.Margin.Bottom, value.Margin.Left,
+	)
+	if value.Width > 0 {
+		out = out.Width(value.Width)
+	}
+	if value.Height > 0 {
+		out = out.Height(value.Height)
+	}
+	return out
+}
+
+func colorFor(role cadencestyle.ColorRole, palette Palette) string {
+	return cadencestyle.ColorRoleFold(role, cadencestyle.ColorRoleCases[string]{
+		ColorDefault: func() string { return palette.Default },
+		ColorPrimary: func() string { return palette.Primary },
+		ColorSecondary: func() string { return palette.Secondary },
+		ColorAccent: func() string { return palette.Accent },
+		ColorSuccess: func() string { return palette.Success },
+		ColorWarning: func() string { return palette.Warning },
+		ColorDanger: func() string { return palette.Danger },
+		ColorMuted: func() string { return palette.Muted },
+		ColorSurface: func() string { return palette.Surface },
+	})
+}
