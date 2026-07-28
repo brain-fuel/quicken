@@ -24,5 +24,3 @@ require (
 )
 
 tool goforge.dev/goplus/cmd/goplus
-
-replace goforge.dev/quicken/native => ../native
