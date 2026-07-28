@@ -1,0 +1,62 @@
+package main
+
+import (
+	"context"
+	"log"
+	"net/http"
+
+	"goforge.dev/cadence/program"
+	taskboard "goforge.dev/cadence-taskboard"
+	"goforge.dev/quicken/web"
+)
+
+func main() {
+	mux := http.NewServeMux()
+
+	commands := quicken.NewCommandSet()
+	quicken.RegisterCommand(
+		commands,
+		"taskboard.save",
+		func(_ context.Context, request taskboard.SaveRequest) (taskboard.SaveResponse, error) {
+			return taskboard.SaveResponse{Tasks: request.Tasks}, nil
+		},
+		func(err error) quicken.PublicError {
+			return quicken.PublicError{Code: "save_failed", Message: err.Error()}
+		},
+	)
+	mux.Handle(taskboard.CommandPath, quicken.CommandEndpoint{
+		AppID: taskboard.AppID,
+		ProgramID: taskboard.HydratedID,
+		Commands: commands,
+		Replay: quicken.NewMemoryReplayStore(1024),
+		Security: quicken.DefaultBrowserSecurity(),
+	})
+
+	hydrated := taskboard.HydratedProgram()
+	mux.Handle("/", quicken.FullPageProgram[taskboard.Bootstrap, taskboard.Model, taskboard.Msg]{
+		MountID: "taskboard-root",
+		Program: hydrated,
+	})
+	mux.Handle("/island", quicken.ProgramRegion[taskboard.Bootstrap, taskboard.Model, taskboard.Msg]{
+		MountID: "taskboard-island",
+		Program: hydrated,
+	})
+
+	ignoreEffects := program.ExecutorFunc[taskboard.Msg](
+		func(program.Cmd[taskboard.Msg], program.Dispatch[taskboard.Msg]) {},
+	)
+	live := quicken.NewServerProgram(
+		taskboard.LiveProgram(),
+		taskboard.ModelCodec(),
+		taskboard.MessageCodec(),
+		ignoreEffects,
+	)
+	if err := live.MountRoutes(mux); err != nil {
+		log.Fatal(err)
+	}
+	mux.Handle("/live", live.FullPage("taskboard-live-root"))
+
+	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir("web"))))
+	log.Print("taskboard listening on http://localhost:8080")
+	log.Fatal(http.ListenAndServe(":8080", mux))
+}

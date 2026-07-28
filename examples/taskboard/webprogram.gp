@@ -1,0 +1,60 @@
+package taskboard
+
+import (
+	"net/http"
+
+	"goforge.dev/cadence"
+	"goforge.dev/cadence/program"
+	browser "goforge.dev/quicken/web/browser"
+	"goforge.dev/quicken/web"
+)
+
+const (
+	AppID          = "cadence-taskboard"
+	HydratedID     = "taskboard-hydrated"
+	LiveID         = "taskboard-live"
+	CommandPath    = "/_taskboard/command"
+	LiveSocketPath = "/_taskboard/live/socket"
+	LivePollPath   = "/_taskboard/live/poll"
+	LiveEventPath  = "/_taskboard/live/event"
+)
+
+func WebProgram(id string, plan cadence.ValidatedPlan, save SaveEffect) quicken.Program[Bootstrap, Model, Msg] {
+	return quicken.Program[Bootstrap, Model, Msg]{
+		AppID: AppID,
+		ID: id,
+		Plan: plan,
+		Assets: quicken.BrowserAssets{
+			Hash: "development",
+			WasmURL: "/assets/taskboard.wasm",
+			WasmExecURL: "/assets/wasm_exec.js",
+			LoaderURL: "/assets/cadence-loader.js",
+		},
+		CommandEndpoint: CommandPath,
+		SocketEndpoint: LiveSocketPath,
+		PollEndpoint: LivePollPath,
+		EventEndpoint: LiveEventPath,
+		DocumentTitle: "Cadence Task Board",
+		Bootstrap: func(*http.Request) (Bootstrap, error) {
+			return Bootstrap{Initial: InitialModel()}, nil
+		},
+		Logic: func(bootstrap Bootstrap) program.Logic[Model, Msg] {
+			return Logic(bootstrap.Initial, save)
+		},
+		View: BrowserView,
+		Skeleton: func(Bootstrap) browser.Node[Msg] {
+			return browser.Element[Msg]("p", browser.Text[Msg]("Loading task board..."))
+		},
+		NoScript: func(bootstrap Bootstrap) browser.Node[Msg] {
+			return BrowserView(bootstrap.Initial)
+		},
+	}
+}
+
+func HydratedProgram() quicken.Program[Bootstrap, Model, Msg] {
+	return WebProgram(HydratedID, cadence.Hydrated(cadence.ActivateLoad()), RemoteSave)
+}
+
+func LiveProgram() quicken.Program[Bootstrap, Model, Msg] {
+	return WebProgram(LiveID, cadence.LiveServer(cadence.ActivateLoad()), LocalSave)
+}
