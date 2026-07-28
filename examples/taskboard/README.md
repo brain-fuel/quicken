@@ -1,16 +1,21 @@
-# cadence-taskboard
+# ForgeFlow
 
-A reference application proving one Cadence model, closed message algebra,
-update function, codecs, commands, semantic view, and browser view across:
+ForgeFlow is a non-trivial cross-target incident-response and field-operations
+application. One Go+ Cadence model, closed message algebra, update function,
+effect boundary, codecs, and semantic view deploy through Quicken to:
 
-- Quicken full-page SSR and hydrated client ownership;
-- Quicken SSR islands;
-- Quicken server-owned live sessions;
-- Bubble Tea v2 with Lip Gloss;
-- Quicken Desktop on Windows, macOS, and Linux;
-- Quicken Mobile on iOS and Android.
+- server-rendered and hydrated WebAssembly browser UI;
+- server-owned live browser sessions;
+- terminal UI using Bubble Tea and Lip Gloss;
+- native Windows, macOS, and Linux desktop applications;
+- native iOS and Android mobile applications.
 
-## Run
+The example implements incident creation, severity and lifecycle management,
+nested response tasks, an append-only operational timeline, full-text
+filtering, optimistic persistence, online/offline transitions, queued
+synchronization, and explicit conflict resolution.
+
+## Run locally
 
 ```sh
 go run ./cmd/tui
@@ -21,17 +26,30 @@ go run ./cmd/server
 Build browser assets into `web/`:
 
 ```sh
-GOOS=js GOARCH=wasm go build -o web/taskboard.wasm ./cmd/wasm
+mkdir -p web
+GOOS=js GOARCH=wasm go build -o web/forgeflow.wasm ./cmd/wasm
 cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" web/wasm_exec.js
 cp ../../browser/client/cadence-loader.js web/cadence-loader.js
+go run ./cmd/server
 ```
 
-Then open `/` for a hydrated full page, `/island` for the composable region,
-or `/live` for server-owned state.
+Open `/` for hydrated ownership, `/island` for a composable region, or `/live`
+for server-owned state.
 
-Package `./cmd/mobile` with Gio's `gogio` tool for iOS or Android.
+## Package native targets
 
-The taskboard is an integration example, not a separately published framework
-dependency.
+```sh
+go build -o dist/forgeflow-tui ./cmd/tui
+go build -o dist/forgeflow-desktop ./cmd/desktop
+gogio -target android -appid dev.goforge.forgeflow ./cmd/mobile
+gogio -target ios -appid dev.goforge.forgeflow ./cmd/mobile
+```
+
+Android packaging requires the Android SDK/NDK. iOS packaging requires macOS
+and Xcode. Desktop cross-packaging follows Gio's platform toolchain
+requirements.
+
+The module path remains `goforge.dev/cadence-taskboard` so existing release
+examples continue to resolve; ForgeFlow is the application identity.
 
 MIT, Copyright (c) 2026 Goforge.

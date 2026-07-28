@@ -17,7 +17,7 @@ func main() {
 		Logic: taskboard.Logic(taskboard.InitialModel(), taskboard.LocalSave),
 		View:  native.SELView(taskboard.SemanticView, native.DefaultPalette()),
 		Window: native.WindowOptions{
-			Title:  "Cadence Task Board",
+			Title:  "ForgeFlow Operations",
 			Width:  unit.Dp(720),
 			Height: unit.Dp(540),
 		},

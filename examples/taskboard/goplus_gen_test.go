@@ -11,14 +11,16 @@ func GenFilter(t *rapid.T) Filter {
 }
 
 func genFilterDepth(t *rapid.T, depth int) Filter {
-	n := rapid.IntRange(0, 2).Draw(t, "variant")
+	n := rapid.IntRange(0, 3).Draw(t, "variant")
 	switch n {
 	case 0:
 		return FilterAll{}
 	case 1:
 		return FilterActive{}
 	case 2:
-		return FilterCompleted{}
+		return FilterCritical{}
+	case 3:
+		return FilterResolved{}
 	}
 	panic("goplus: impossible variant index in GenFilter")
 }
@@ -29,25 +31,55 @@ func GenMsg(t *rapid.T) Msg {
 }
 
 func genMsgDepth(t *rapid.T, depth int) Msg {
-	n := rapid.IntRange(0, 6).Draw(t, "variant")
+	n := rapid.IntRange(0, 21).Draw(t, "variant")
 	if depth <= 0 {
-		n = []int{0, 1, 2, 3, 5, 6}[rapid.IntRange(0, 5).Draw(t, "leaf")]
+		n = []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 19, 20, 21}[rapid.IntRange(0, 20).Draw(t, "leaf")]
 	}
 	switch n {
 	case 0:
-		return DraftChanged{Value: rapid.String().Draw(t, "f")}
+		return IncidentDraftChanged{Value: rapid.String().Draw(t, "f")}
 	case 1:
-		return AddRequested{}
+		return SummaryDraftChanged{Value: rapid.String().Draw(t, "f")}
 	case 2:
-		return ToggleRequested{Id: rapid.Int().Draw(t, "f")}
+		return LocationDraftChanged{Value: rapid.String().Draw(t, "f")}
 	case 3:
-		return DeleteRequested{Id: rapid.Int().Draw(t, "f")}
+		return OwnerDraftChanged{Value: rapid.String().Draw(t, "f")}
 	case 4:
-		return FilterRequested{Filter: genFilterDepth(t, depth-1)}
+		return IncidentSubmitted{}
 	case 5:
-		return SaveSucceeded{Tasks: rapid.Make[[]Task]().Draw(t, "f")}
+		return IncidentSelected{Id: rapid.Int().Draw(t, "f")}
 	case 6:
+		return SeverityChanged{Id: rapid.Int().Draw(t, "f"), Severity: rapid.Make[Severity]().Draw(t, "f")}
+	case 7:
+		return StatusAdvanced{Id: rapid.Int().Draw(t, "f")}
+	case 8:
+		return TaskDraftChanged{Value: rapid.String().Draw(t, "f")}
+	case 9:
+		return TaskAdded{}
+	case 10:
+		return TaskToggled{TaskID: rapid.Int().Draw(t, "f")}
+	case 11:
+		return NoteDraftChanged{Value: rapid.String().Draw(t, "f")}
+	case 12:
+		return NoteAdded{}
+	case 13:
+		return SearchChanged{Value: rapid.String().Draw(t, "f")}
+	case 14:
+		return FilterRequested{Filter: genFilterDepth(t, depth-1)}
+	case 15:
+		return ConnectivityChanged{Online: rapid.Bool().Draw(t, "f")}
+	case 16:
+		return SyncRequested{}
+	case 17:
+		return SaveSucceeded{Incidents: rapid.Make[[]Incident]().Draw(t, "f")}
+	case 18:
 		return SaveFailed{Message: rapid.String().Draw(t, "f")}
+	case 19:
+		return ConflictDetected{Conflict: rapid.Make[Conflict]().Draw(t, "f")}
+	case 20:
+		return KeepLocalRequested{}
+	case 21:
+		return AcceptRemoteRequested{}
 	}
 	panic("goplus: impossible variant index in GenMsg")
 }

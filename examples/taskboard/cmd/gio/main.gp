@@ -10,7 +10,7 @@ import (
 
 func main() {
 	window := cadencegio.NewWindow(cadencegio.WindowOptions{
-		Title: "Cadence Task Board",
+		Title: "ForgeFlow Operations",
 		Width: unit.Dp(720),
 		Height: unit.Dp(540),
 	})

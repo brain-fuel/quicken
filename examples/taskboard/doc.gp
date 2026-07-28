@@ -1,2 +1,2 @@
-// Package taskboard is the cross-target Cadence reference application.
+// Package taskboard implements the cross-target ForgeFlow operations application.
 package taskboard

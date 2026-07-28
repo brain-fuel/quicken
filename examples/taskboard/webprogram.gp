@@ -10,13 +10,13 @@ import (
 )
 
 const (
-	AppID          = "cadence-taskboard"
-	HydratedID     = "taskboard-hydrated"
-	LiveID         = "taskboard-live"
-	CommandPath    = "/_taskboard/command"
-	LiveSocketPath = "/_taskboard/live/socket"
-	LivePollPath   = "/_taskboard/live/poll"
-	LiveEventPath  = "/_taskboard/live/event"
+	AppID          = "forgeflow"
+	HydratedID     = "forgeflow-hydrated"
+	LiveID         = "forgeflow-live"
+	CommandPath    = "/_forgeflow/command"
+	LiveSocketPath = "/_forgeflow/live/socket"
+	LivePollPath   = "/_forgeflow/live/poll"
+	LiveEventPath  = "/_forgeflow/live/event"
 )
 
 func WebProgram(id string, plan cadence.ValidatedPlan, save SaveEffect) quicken.Program[Bootstrap, Model, Msg] {
@@ -26,7 +26,7 @@ func WebProgram(id string, plan cadence.ValidatedPlan, save SaveEffect) quicken.
 		Plan: plan,
 		Assets: quicken.BrowserAssets{
 			Hash: "development",
-			WasmURL: "/assets/taskboard.wasm",
+			WasmURL: "/assets/forgeflow.wasm",
 			WasmExecURL: "/assets/wasm_exec.js",
 			LoaderURL: "/assets/cadence-loader.js",
 		},
@@ -34,7 +34,7 @@ func WebProgram(id string, plan cadence.ValidatedPlan, save SaveEffect) quicken.
 		SocketEndpoint: LiveSocketPath,
 		PollEndpoint: LivePollPath,
 		EventEndpoint: LiveEventPath,
-		DocumentTitle: "Cadence Task Board",
+		DocumentTitle: "ForgeFlow Operations",
 		Bootstrap: func(*http.Request) (Bootstrap, error) {
 			return Bootstrap{Initial: InitialModel()}, nil
 		},
@@ -43,7 +43,7 @@ func WebProgram(id string, plan cadence.ValidatedPlan, save SaveEffect) quicken.
 		},
 		View: BrowserView,
 		Skeleton: func(Bootstrap) browser.Node[Msg] {
-			return browser.Element[Msg]("p", browser.Text[Msg]("Loading task board..."))
+			return browser.Element[Msg]("p", browser.Text[Msg]("Loading ForgeFlow..."))
 		},
 		NoScript: func(bootstrap Bootstrap) browser.Node[Msg] {
 			return BrowserView(bootstrap.Initial)

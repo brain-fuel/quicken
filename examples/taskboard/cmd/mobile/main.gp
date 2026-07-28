@@ -20,7 +20,7 @@ func main() {
 		return semantic(gtx, model, ui)
 	}
 	_, err := mobile.Run(mobile.Application[taskboard.Model, taskboard.Msg]{
-		ID: "dev.goforge.taskboard",
+		ID: "dev.goforge.forgeflow",
 		Logic: taskboard.Logic(taskboard.InitialModel(), taskboard.LocalSave),
 		View: view,
 	})

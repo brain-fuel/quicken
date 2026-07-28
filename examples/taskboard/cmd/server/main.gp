@@ -16,9 +16,9 @@ func main() {
 	commands := quicken.NewCommandSet()
 	quicken.RegisterCommand(
 		commands,
-		"taskboard.save",
+		"forgeflow.save",
 		func(_ context.Context, request taskboard.SaveRequest) (taskboard.SaveResponse, error) {
-			return taskboard.SaveResponse{Tasks: request.Tasks}, nil
+			return taskboard.SaveResponse{Incidents: request.Incidents}, nil
 		},
 		func(err error) quicken.PublicError {
 			return quicken.PublicError{Code: "save_failed", Message: err.Error()}
@@ -57,6 +57,6 @@ func main() {
 	mux.Handle("/live", live.FullPage("taskboard-live-root"))
 
 	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir("web"))))
-	log.Print("taskboard listening on http://localhost:8080")
+	log.Print("ForgeFlow listening on http://localhost:8080")
 	log.Fatal(http.ListenAndServe(":8080", mux))
 }

@@ -6,14 +6,60 @@ package taskboard
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
+	"time"
 
 	"goforge.dev/cadence/program"
 )
 
+type Severity string
+
+const (
+	SeverityLow      Severity = "low"
+	SeverityMedium   Severity = "medium"
+	SeverityHigh     Severity = "high"
+	SeverityCritical Severity = "critical"
+)
+
+type IncidentStatus string
+
+const (
+	StatusOpen       IncidentStatus = "open"
+	StatusMitigating IncidentStatus = "mitigating"
+	StatusMonitoring IncidentStatus = "monitoring"
+	StatusResolved   IncidentStatus = "resolved"
+)
+
 type Task struct {
-	ID    int    `json:"id"`
-	Title string `json:"title"`
-	Done  bool   `json:"done"`
+	ID       int    `json:"id"`
+	Title    string `json:"title"`
+	Done     bool   `json:"done"`
+	Assignee string `json:"assignee,omitempty"`
+}
+
+type Activity struct {
+	ID   int    `json:"id"`
+	At   string `json:"at"`
+	Kind string `json:"kind"`
+	Body string `json:"body"`
+}
+
+type Incident struct {
+	ID       int            `json:"id"`
+	Title    string         `json:"title"`
+	Summary  string         `json:"summary"`
+	Location string         `json:"location"`
+	Owner    string         `json:"owner"`
+	Severity Severity       `json:"severity"`
+	Status   IncidentStatus `json:"status"`
+	Tasks    []Task         `json:"tasks"`
+	Timeline []Activity     `json:"timeline"`
+}
+
+type Conflict struct {
+	IncidentID int      `json:"incident_id"`
+	Local      Incident `json:"local"`
+	Remote     Incident `json:"remote"`
 }
 
 //goplus:enum Filter
@@ -29,16 +75,22 @@ type FilterActive struct{}
 
 func (FilterActive) isFilter() {}
 
-//goplus:variant (Filter) FilterCompleted
-type FilterCompleted struct{}
+//goplus:variant (Filter) FilterCritical
+type FilterCritical struct{}
 
-func (FilterCompleted) isFilter() {}
+func (FilterCritical) isFilter() {}
+
+//goplus:variant (Filter) FilterResolved
+type FilterResolved struct{}
+
+func (FilterResolved) isFilter() {}
 
 // FilterCases selects one handler per Filter variant for FilterFold.
 type FilterCases[R any] struct {
-	FilterAll       func() R
-	FilterActive    func() R
-	FilterCompleted func() R
+	FilterAll      func() R
+	FilterActive   func() R
+	FilterCritical func() R
+	FilterResolved func() R
 }
 
 // FilterFold reduces Filter by one-level case analysis.
@@ -48,8 +100,10 @@ func FilterFold[R any](f Filter, cs FilterCases[R]) R {
 		return cs.FilterAll()
 	case FilterActive:
 		return cs.FilterActive()
-	case FilterCompleted:
-		return cs.FilterCompleted()
+	case FilterCritical:
+		return cs.FilterCritical()
+	case FilterResolved:
+		return cs.FilterResolved()
 	default:
 		panic("goplus: impossible enum value in FilterFold")
 	}
@@ -58,9 +112,10 @@ func FilterFold[R any](f Filter, cs FilterCases[R]) R {
 // FilterEqOverrides carries optional per-variant hooks for FilterEqualWith.
 // A hook returning handled=false falls through to the derived comparison.
 type FilterEqOverrides struct {
-	FilterAll       func(x, y FilterAll) (eq, handled bool)
-	FilterActive    func(x, y FilterActive) (eq, handled bool)
-	FilterCompleted func(x, y FilterCompleted) (eq, handled bool)
+	FilterAll      func(x, y FilterAll) (eq, handled bool)
+	FilterActive   func(x, y FilterActive) (eq, handled bool)
+	FilterCritical func(x, y FilterCritical) (eq, handled bool)
+	FilterResolved func(x, y FilterResolved) (eq, handled bool)
 }
 
 // FilterEqualWith reports structural equality of a and b under ov.
@@ -93,13 +148,25 @@ func FilterEqualWith(a, b Filter, ov FilterEqOverrides) bool {
 		}
 		_ = y
 		return true
-	case FilterCompleted:
-		y, ok := any(b).(FilterCompleted)
+	case FilterCritical:
+		y, ok := any(b).(FilterCritical)
 		if !ok {
 			return false
 		}
-		if ov.FilterCompleted != nil {
-			if eq, handled := ov.FilterCompleted(x, y); handled {
+		if ov.FilterCritical != nil {
+			if eq, handled := ov.FilterCritical(x, y); handled {
+				return eq
+			}
+		}
+		_ = y
+		return true
+	case FilterResolved:
+		y, ok := any(b).(FilterResolved)
+		if !ok {
+			return false
+		}
+		if ov.FilterResolved != nil {
+			if eq, handled := ov.FilterResolved(x, y); handled {
 				return eq
 			}
 		}
@@ -114,44 +181,171 @@ func FilterEqual(a, b Filter) bool {
 	return FilterEqualWith(a, b, FilterEqOverrides{})
 }
 
+//goplus:enum SyncState
+type SyncState interface{ isSyncState() }
+
+//goplus:variant (SyncState) SyncIdle
+type SyncIdle struct{}
+
+func (SyncIdle) isSyncState() {}
+
+//goplus:variant (SyncState) SyncPending
+type SyncPending struct{}
+
+func (SyncPending) isSyncState() {}
+
+//goplus:variant (SyncState) SyncRunning
+type SyncRunning struct{}
+
+func (SyncRunning) isSyncState() {}
+
+//goplus:variant (SyncState) SyncConflicted(conflict Conflict)
+type SyncConflicted struct {
+	Conflict Conflict
+}
+
+func (SyncConflicted) isSyncState() {}
+
+// SyncStateCases selects one handler per SyncState variant for SyncStateFold.
+type SyncStateCases[R any] struct {
+	SyncIdle       func() R
+	SyncPending    func() R
+	SyncRunning    func() R
+	SyncConflicted func(conflict Conflict) R
+}
+
+// SyncStateFold reduces SyncState by one-level case analysis.
+func SyncStateFold[R any](s SyncState, cs SyncStateCases[R]) R {
+	switch m := any(s).(type) {
+	case SyncIdle:
+		return cs.SyncIdle()
+	case SyncPending:
+		return cs.SyncPending()
+	case SyncRunning:
+		return cs.SyncRunning()
+	case SyncConflicted:
+		return cs.SyncConflicted(m.Conflict)
+	default:
+		panic("goplus: impossible enum value in SyncStateFold")
+	}
+}
+
 type Model struct {
-	Tasks  []Task
-	Draft  string
-	Filter Filter
-	Saving bool
-	Error  string
-	NextID int
+	Incidents      []Incident
+	SelectedID     int
+	IncidentDraft  string
+	SummaryDraft   string
+	LocationDraft  string
+	OwnerDraft     string
+	TaskDraft      string
+	NoteDraft      string
+	Query          string
+	Filter         Filter
+	Sync           SyncState
+	Online         bool
+	Saving         bool
+	Error          string
+	NextIncidentID int
+	NextTaskID     int
+	NextActivityID int
 }
 
 //goplus:enum Msg
 //goplus:derive gen
 type Msg interface{ isMsg() }
 
-//goplus:variant (Msg) DraftChanged(value string)
-type DraftChanged struct {
+//goplus:variant (Msg) IncidentDraftChanged(value string)
+type IncidentDraftChanged struct {
 	Value string
 }
 
-func (DraftChanged) isMsg() {}
+func (IncidentDraftChanged) isMsg() {}
 
-//goplus:variant (Msg) AddRequested
-type AddRequested struct{}
+//goplus:variant (Msg) SummaryDraftChanged(value string)
+type SummaryDraftChanged struct {
+	Value string
+}
 
-func (AddRequested) isMsg() {}
+func (SummaryDraftChanged) isMsg() {}
 
-//goplus:variant (Msg) ToggleRequested(id int)
-type ToggleRequested struct {
+//goplus:variant (Msg) LocationDraftChanged(value string)
+type LocationDraftChanged struct {
+	Value string
+}
+
+func (LocationDraftChanged) isMsg() {}
+
+//goplus:variant (Msg) OwnerDraftChanged(value string)
+type OwnerDraftChanged struct {
+	Value string
+}
+
+func (OwnerDraftChanged) isMsg() {}
+
+//goplus:variant (Msg) IncidentSubmitted
+type IncidentSubmitted struct{}
+
+func (IncidentSubmitted) isMsg() {}
+
+//goplus:variant (Msg) IncidentSelected(id int)
+type IncidentSelected struct {
 	Id int
 }
 
-func (ToggleRequested) isMsg() {}
+func (IncidentSelected) isMsg() {}
 
-//goplus:variant (Msg) DeleteRequested(id int)
-type DeleteRequested struct {
+//goplus:variant (Msg) SeverityChanged(id int, severity Severity)
+type SeverityChanged struct {
+	Id       int
+	Severity Severity
+}
+
+func (SeverityChanged) isMsg() {}
+
+//goplus:variant (Msg) StatusAdvanced(id int)
+type StatusAdvanced struct {
 	Id int
 }
 
-func (DeleteRequested) isMsg() {}
+func (StatusAdvanced) isMsg() {}
+
+//goplus:variant (Msg) TaskDraftChanged(value string)
+type TaskDraftChanged struct {
+	Value string
+}
+
+func (TaskDraftChanged) isMsg() {}
+
+//goplus:variant (Msg) TaskAdded
+type TaskAdded struct{}
+
+func (TaskAdded) isMsg() {}
+
+//goplus:variant (Msg) TaskToggled(taskID int)
+type TaskToggled struct {
+	TaskID int
+}
+
+func (TaskToggled) isMsg() {}
+
+//goplus:variant (Msg) NoteDraftChanged(value string)
+type NoteDraftChanged struct {
+	Value string
+}
+
+func (NoteDraftChanged) isMsg() {}
+
+//goplus:variant (Msg) NoteAdded
+type NoteAdded struct{}
+
+func (NoteAdded) isMsg() {}
+
+//goplus:variant (Msg) SearchChanged(value string)
+type SearchChanged struct {
+	Value string
+}
+
+func (SearchChanged) isMsg() {}
 
 //goplus:variant (Msg) FilterRequested(filter Filter)
 type FilterRequested struct {
@@ -160,9 +354,21 @@ type FilterRequested struct {
 
 func (FilterRequested) isMsg() {}
 
-//goplus:variant (Msg) SaveSucceeded(tasks []Task)
+//goplus:variant (Msg) ConnectivityChanged(online bool)
+type ConnectivityChanged struct {
+	Online bool
+}
+
+func (ConnectivityChanged) isMsg() {}
+
+//goplus:variant (Msg) SyncRequested
+type SyncRequested struct{}
+
+func (SyncRequested) isMsg() {}
+
+//goplus:variant (Msg) SaveSucceeded(incidents []Incident)
 type SaveSucceeded struct {
-	Tasks []Task
+	Incidents []Incident
 }
 
 func (SaveSucceeded) isMsg() {}
@@ -174,165 +380,99 @@ type SaveFailed struct {
 
 func (SaveFailed) isMsg() {}
 
+//goplus:variant (Msg) ConflictDetected(conflict Conflict)
+type ConflictDetected struct {
+	Conflict Conflict
+}
+
+func (ConflictDetected) isMsg() {}
+
+//goplus:variant (Msg) KeepLocalRequested
+type KeepLocalRequested struct{}
+
+func (KeepLocalRequested) isMsg() {}
+
+//goplus:variant (Msg) AcceptRemoteRequested
+type AcceptRemoteRequested struct{}
+
+func (AcceptRemoteRequested) isMsg() {}
+
 // MsgCases selects one handler per Msg variant for MsgFold.
 type MsgCases[R any] struct {
-	DraftChanged    func(value string) R
-	AddRequested    func() R
-	ToggleRequested func(id int) R
-	DeleteRequested func(id int) R
-	FilterRequested func(filter Filter) R
-	SaveSucceeded   func(tasks []Task) R
-	SaveFailed      func(message string) R
+	IncidentDraftChanged  func(value string) R
+	SummaryDraftChanged   func(value string) R
+	LocationDraftChanged  func(value string) R
+	OwnerDraftChanged     func(value string) R
+	IncidentSubmitted     func() R
+	IncidentSelected      func(id int) R
+	SeverityChanged       func(id int, severity Severity) R
+	StatusAdvanced        func(id int) R
+	TaskDraftChanged      func(value string) R
+	TaskAdded             func() R
+	TaskToggled           func(taskID int) R
+	NoteDraftChanged      func(value string) R
+	NoteAdded             func() R
+	SearchChanged         func(value string) R
+	FilterRequested       func(filter Filter) R
+	ConnectivityChanged   func(online bool) R
+	SyncRequested         func() R
+	SaveSucceeded         func(incidents []Incident) R
+	SaveFailed            func(message string) R
+	ConflictDetected      func(conflict Conflict) R
+	KeepLocalRequested    func() R
+	AcceptRemoteRequested func() R
 }
 
 // MsgFold reduces Msg by one-level case analysis.
 func MsgFold[R any](m Msg, cs MsgCases[R]) R {
 	switch m := any(m).(type) {
-	case DraftChanged:
-		return cs.DraftChanged(m.Value)
-	case AddRequested:
-		return cs.AddRequested()
-	case ToggleRequested:
-		return cs.ToggleRequested(m.Id)
-	case DeleteRequested:
-		return cs.DeleteRequested(m.Id)
+	case IncidentDraftChanged:
+		return cs.IncidentDraftChanged(m.Value)
+	case SummaryDraftChanged:
+		return cs.SummaryDraftChanged(m.Value)
+	case LocationDraftChanged:
+		return cs.LocationDraftChanged(m.Value)
+	case OwnerDraftChanged:
+		return cs.OwnerDraftChanged(m.Value)
+	case IncidentSubmitted:
+		return cs.IncidentSubmitted()
+	case IncidentSelected:
+		return cs.IncidentSelected(m.Id)
+	case SeverityChanged:
+		return cs.SeverityChanged(m.Id, m.Severity)
+	case StatusAdvanced:
+		return cs.StatusAdvanced(m.Id)
+	case TaskDraftChanged:
+		return cs.TaskDraftChanged(m.Value)
+	case TaskAdded:
+		return cs.TaskAdded()
+	case TaskToggled:
+		return cs.TaskToggled(m.TaskID)
+	case NoteDraftChanged:
+		return cs.NoteDraftChanged(m.Value)
+	case NoteAdded:
+		return cs.NoteAdded()
+	case SearchChanged:
+		return cs.SearchChanged(m.Value)
 	case FilterRequested:
 		return cs.FilterRequested(m.Filter)
+	case ConnectivityChanged:
+		return cs.ConnectivityChanged(m.Online)
+	case SyncRequested:
+		return cs.SyncRequested()
 	case SaveSucceeded:
-		return cs.SaveSucceeded(m.Tasks)
+		return cs.SaveSucceeded(m.Incidents)
 	case SaveFailed:
 		return cs.SaveFailed(m.Message)
+	case ConflictDetected:
+		return cs.ConflictDetected(m.Conflict)
+	case KeepLocalRequested:
+		return cs.KeepLocalRequested()
+	case AcceptRemoteRequested:
+		return cs.AcceptRemoteRequested()
 	default:
 		panic("goplus: impossible enum value in MsgFold")
 	}
-}
-
-// MsgEqOverrides carries optional per-variant hooks for MsgEqualWith.
-// A hook returning handled=false falls through to the derived comparison.
-type MsgEqOverrides struct {
-	DraftChanged    func(x, y DraftChanged) (eq, handled bool)
-	AddRequested    func(x, y AddRequested) (eq, handled bool)
-	ToggleRequested func(x, y ToggleRequested) (eq, handled bool)
-	DeleteRequested func(x, y DeleteRequested) (eq, handled bool)
-	FilterRequested func(x, y FilterRequested) (eq, handled bool)
-	SaveSucceeded   func(x, y SaveSucceeded) (eq, handled bool)
-	SaveFailed      func(x, y SaveFailed) (eq, handled bool)
-}
-
-// MsgEqualWith reports structural equality of a and b under ov.
-func MsgEqualWith(a, b Msg, ov MsgEqOverrides) bool {
-	if a == nil || b == nil {
-		return a == nil && b == nil
-	}
-	switch x := any(a).(type) {
-	case DraftChanged:
-		y, ok := any(b).(DraftChanged)
-		if !ok {
-			return false
-		}
-		if ov.DraftChanged != nil {
-			if eq, handled := ov.DraftChanged(x, y); handled {
-				return eq
-			}
-		}
-		if x.Value != y.Value {
-			return false
-		}
-		return true
-	case AddRequested:
-		y, ok := any(b).(AddRequested)
-		if !ok {
-			return false
-		}
-		if ov.AddRequested != nil {
-			if eq, handled := ov.AddRequested(x, y); handled {
-				return eq
-			}
-		}
-		_ = y
-		return true
-	case ToggleRequested:
-		y, ok := any(b).(ToggleRequested)
-		if !ok {
-			return false
-		}
-		if ov.ToggleRequested != nil {
-			if eq, handled := ov.ToggleRequested(x, y); handled {
-				return eq
-			}
-		}
-		if x.Id != y.Id {
-			return false
-		}
-		return true
-	case DeleteRequested:
-		y, ok := any(b).(DeleteRequested)
-		if !ok {
-			return false
-		}
-		if ov.DeleteRequested != nil {
-			if eq, handled := ov.DeleteRequested(x, y); handled {
-				return eq
-			}
-		}
-		if x.Id != y.Id {
-			return false
-		}
-		return true
-	case FilterRequested:
-		y, ok := any(b).(FilterRequested)
-		if !ok {
-			return false
-		}
-		if ov.FilterRequested != nil {
-			if eq, handled := ov.FilterRequested(x, y); handled {
-				return eq
-			}
-		}
-		if !FilterEqual(x.Filter, y.Filter) {
-			return false
-		}
-		return true
-	case SaveSucceeded:
-		y, ok := any(b).(SaveSucceeded)
-		if !ok {
-			return false
-		}
-		if ov.SaveSucceeded != nil {
-			if eq, handled := ov.SaveSucceeded(x, y); handled {
-				return eq
-			}
-		}
-		if len(x.Tasks) != len(y.Tasks) {
-			return false
-		}
-		for i0 := range x.Tasks {
-			if x.Tasks[i0] != y.Tasks[i0] {
-				return false
-			}
-		}
-		return true
-	case SaveFailed:
-		y, ok := any(b).(SaveFailed)
-		if !ok {
-			return false
-		}
-		if ov.SaveFailed != nil {
-			if eq, handled := ov.SaveFailed(x, y); handled {
-				return eq
-			}
-		}
-		if x.Message != y.Message {
-			return false
-		}
-		return true
-	}
-	return false
-}
-
-// MsgEqual reports structural equality of a and b.
-func MsgEqual(a, b Msg) bool {
-	return MsgEqualWith(a, b, MsgEqOverrides{})
 }
 
 type Bootstrap struct {
@@ -340,44 +480,82 @@ type Bootstrap struct {
 }
 
 type modelWire struct {
-	Tasks  []Task `json:"tasks"`
-	Draft  string `json:"draft"`
-	Filter string `json:"filter"`
-	Saving bool   `json:"saving"`
-	Error  string `json:"error"`
-	NextID int    `json:"next_id"`
+	Incidents      []Incident `json:"incidents"`
+	SelectedID     int        `json:"selected_id"`
+	IncidentDraft  string     `json:"incident_draft"`
+	SummaryDraft   string     `json:"summary_draft"`
+	LocationDraft  string     `json:"location_draft"`
+	OwnerDraft     string     `json:"owner_draft"`
+	TaskDraft      string     `json:"task_draft"`
+	NoteDraft      string     `json:"note_draft"`
+	Query          string     `json:"query"`
+	Filter         string     `json:"filter"`
+	Sync           string     `json:"sync"`
+	Conflict       *Conflict  `json:"conflict,omitempty"`
+	Online         bool       `json:"online"`
+	Saving         bool       `json:"saving"`
+	Error          string     `json:"error"`
+	NextIncidentID int        `json:"next_incident_id"`
+	NextTaskID     int        `json:"next_task_id"`
+	NextActivityID int        `json:"next_activity_id"`
 }
 
 type messageWire struct {
-	Type    string `json:"type"`
-	Value   string `json:"value,omitempty"`
-	ID      int    `json:"id,omitempty"`
-	Filter  string `json:"filter,omitempty"`
-	Tasks   []Task `json:"tasks,omitempty"`
-	Message string `json:"message,omitempty"`
+	Type      string     `json:"type"`
+	Value     string     `json:"value,omitempty"`
+	ID        int        `json:"id,omitempty"`
+	TaskID    int        `json:"task_id,omitempty"`
+	Severity  Severity   `json:"severity,omitempty"`
+	Filter    string     `json:"filter,omitempty"`
+	Online    bool       `json:"online,omitempty"`
+	Incidents []Incident `json:"incidents,omitempty"`
+	Message   string     `json:"message,omitempty"`
+	Conflict  *Conflict  `json:"conflict,omitempty"`
 }
 
 func InitialModel() Model {
 	return Model{
-		Tasks: []Task{
-			{ID: 1, Title: "Define the shared model"},
-			{ID: 2, Title: "Hydrate browser and native views"},
+		Incidents: []Incident{
+			{
+				ID: 1, Title: "Warehouse cooling alarm",
+				Summary:  "Temperature is rising in cold storage zone B.",
+				Location: "Portland warehouse", Owner: "Maya",
+				Severity: SeverityHigh, Status: StatusMitigating,
+				Tasks: []Task{
+					{ID: 1, Title: "Inspect compressor telemetry", Done: true, Assignee: "Lee"},
+					{ID: 2, Title: "Move temperature-sensitive inventory", Assignee: "Maya"},
+				},
+				Timeline: []Activity{
+					{ID: 1, At: "09:10", Kind: "opened", Body: "Sensor C-14 crossed the alert threshold."},
+				},
+			},
+			{
+				ID: 2, Title: "Checkout API latency",
+				Summary:  "p95 latency exceeds the regional SLO.",
+				Location: "us-west", Owner: "Noor",
+				Severity: SeverityCritical, Status: StatusMonitoring,
+				Tasks:    []Task{{ID: 3, Title: "Compare database replica lag", Done: true, Assignee: "Noor"}},
+				Timeline: []Activity{{ID: 2, At: "10:42", Kind: "update", Body: "Traffic shifted away from the degraded pool."}},
+			},
 		},
-		Filter: FilterAll{},
-		NextID: 3,
+		SelectedID: 1, Filter: FilterAll{}, Sync: SyncIdle{}, Online: true,
+		NextIncidentID: 3, NextTaskID: 4, NextActivityID: 3,
 	}
 }
 
 func ModelCodec() program.Codec[Model] {
 	return program.Codec[Model]{
 		Encode: func(model Model) ([]byte, error) {
+			syncName, conflict := encodeSync(model.Sync)
 			return json.Marshal(modelWire{
-				Tasks:  cloneTasks(model.Tasks),
-				Draft:  model.Draft,
-				Filter: filterName(model.Filter),
-				Saving: model.Saving,
-				Error:  model.Error,
-				NextID: model.NextID,
+				Incidents: cloneIncidents(model.Incidents), SelectedID: model.SelectedID,
+				IncidentDraft: model.IncidentDraft, SummaryDraft: model.SummaryDraft,
+				LocationDraft: model.LocationDraft, OwnerDraft: model.OwnerDraft,
+				TaskDraft: model.TaskDraft, NoteDraft: model.NoteDraft, Query: model.Query,
+				Filter: filterName(model.Filter), Sync: syncName, Conflict: conflict,
+				Online: model.Online, Saving: model.Saving, Error: model.Error,
+				NextIncidentID: model.NextIncidentID, NextTaskID: model.NextTaskID,
+				NextActivityID: model.NextActivityID,
 			})
 		},
 		Decode: func(data []byte) (Model, error) {
@@ -389,55 +567,91 @@ func ModelCodec() program.Codec[Model] {
 			if err != nil {
 				return Model{}, err
 			}
+			sync, err := decodeSync(wire.Sync, wire.Conflict)
+			if err != nil {
+				return Model{}, err
+			}
 			return Model{
-				Tasks:  cloneTasks(wire.Tasks),
-				Draft:  wire.Draft,
-				Filter: filter,
-				Saving: wire.Saving,
-				Error:  wire.Error,
-				NextID: wire.NextID,
+				Incidents: cloneIncidents(wire.Incidents), SelectedID: wire.SelectedID,
+				IncidentDraft: wire.IncidentDraft, SummaryDraft: wire.SummaryDraft,
+				LocationDraft: wire.LocationDraft, OwnerDraft: wire.OwnerDraft,
+				TaskDraft: wire.TaskDraft, NoteDraft: wire.NoteDraft, Query: wire.Query,
+				Filter: filter, Sync: sync, Online: wire.Online, Saving: wire.Saving,
+				Error: wire.Error, NextIncidentID: wire.NextIncidentID,
+				NextTaskID: wire.NextTaskID, NextActivityID: wire.NextActivityID,
 			}, nil
 		},
 	}
 }
 
 func MessageCodec() program.Codec[Msg] {
-	return program.Codec[Msg]{
-		Encode: encodeMessage,
-		Decode: decodeMessage,
-	}
+	return program.Codec[Msg]{Encode: encodeMessage, Decode: decodeMessage}
 }
 
 func encodeMessage(message Msg) ([]byte, error) {
 	var wire messageWire
 	switch __gp_m0 := any(message).(type) {
-	case DraftChanged:
+	case IncidentDraftChanged:
 		value := __gp_m0.Value
-
-		wire = messageWire{Type: "draft-changed", Value: value}
-	case AddRequested:
-
-		wire = messageWire{Type: "add-requested"}
-	case ToggleRequested:
+		wire = messageWire{Type: "incident-draft", Value: value}
+	case SummaryDraftChanged:
+		value := __gp_m0.Value
+		wire = messageWire{Type: "summary-draft", Value: value}
+	case LocationDraftChanged:
+		value := __gp_m0.Value
+		wire = messageWire{Type: "location-draft", Value: value}
+	case OwnerDraftChanged:
+		value := __gp_m0.Value
+		wire = messageWire{Type: "owner-draft", Value: value}
+	case IncidentSubmitted:
+		wire = messageWire{Type: "incident-submitted"}
+	case IncidentSelected:
 		id := __gp_m0.Id
-
-		wire = messageWire{Type: "toggle-requested", ID: id}
-	case DeleteRequested:
+		wire = messageWire{Type: "incident-selected", ID: id}
+	case SeverityChanged:
 		id := __gp_m0.Id
-
-		wire = messageWire{Type: "delete-requested", ID: id}
+		severity := __gp_m0.Severity
+		wire = messageWire{Type: "severity-changed", ID: id, Severity: severity}
+	case StatusAdvanced:
+		id := __gp_m0.Id
+		wire = messageWire{Type: "status-advanced", ID: id}
+	case TaskDraftChanged:
+		value := __gp_m0.Value
+		wire = messageWire{Type: "task-draft", Value: value}
+	case TaskAdded:
+		wire = messageWire{Type: "task-added"}
+	case TaskToggled:
+		taskID := __gp_m0.TaskID
+		wire = messageWire{Type: "task-toggled", TaskID: taskID}
+	case NoteDraftChanged:
+		value := __gp_m0.Value
+		wire = messageWire{Type: "note-draft", Value: value}
+	case NoteAdded:
+		wire = messageWire{Type: "note-added"}
+	case SearchChanged:
+		value := __gp_m0.Value
+		wire = messageWire{Type: "search-changed", Value: value}
 	case FilterRequested:
 		filter := __gp_m0.Filter
-
-		wire = messageWire{Type: "filter-requested", Filter: filterName(filter)}
+		wire = messageWire{Type: "filter", Filter: filterName(filter)}
+	case ConnectivityChanged:
+		online := __gp_m0.Online
+		wire = messageWire{Type: "connectivity", Online: online}
+	case SyncRequested:
+		wire = messageWire{Type: "sync-requested"}
 	case SaveSucceeded:
-		tasks := __gp_m0.Tasks
-
-		wire = messageWire{Type: "save-succeeded", Tasks: cloneTasks(tasks)}
+		incidents := __gp_m0.Incidents
+		wire = messageWire{Type: "save-succeeded", Incidents: cloneIncidents(incidents)}
 	case SaveFailed:
 		message := __gp_m0.Message
-
 		wire = messageWire{Type: "save-failed", Message: message}
+	case ConflictDetected:
+		conflict := __gp_m0.Conflict
+		wire = messageWire{Type: "conflict", Conflict: &conflict}
+	case KeepLocalRequested:
+		wire = messageWire{Type: "keep-local"}
+	case AcceptRemoteRequested:
+		wire = messageWire{Type: "accept-remote"}
 	default:
 		panic("goplus: impossible enum value in match")
 	}
@@ -450,34 +664,68 @@ func decodeMessage(data []byte) (Msg, error) {
 		return nil, err
 	}
 	switch wire.Type {
-	case "draft-changed":
-		return DraftChanged{Value: wire.Value}, nil
-	case "add-requested":
-		return AddRequested{}, nil
-	case "toggle-requested":
-		return ToggleRequested{Id: wire.ID}, nil
-	case "delete-requested":
-		return DeleteRequested{Id: wire.ID}, nil
-	case "filter-requested":
+	case "incident-draft":
+		return IncidentDraftChanged{Value: wire.Value}, nil
+	case "summary-draft":
+		return SummaryDraftChanged{Value: wire.Value}, nil
+	case "location-draft":
+		return LocationDraftChanged{Value: wire.Value}, nil
+	case "owner-draft":
+		return OwnerDraftChanged{Value: wire.Value}, nil
+	case "incident-submitted":
+		return IncidentSubmitted{}, nil
+	case "incident-selected":
+		return IncidentSelected{Id: wire.ID}, nil
+	case "severity-changed":
+		return SeverityChanged{Id: wire.ID, Severity: wire.Severity}, nil
+	case "status-advanced":
+		return StatusAdvanced{Id: wire.ID}, nil
+	case "task-draft":
+		return TaskDraftChanged{Value: wire.Value}, nil
+	case "task-added":
+		return TaskAdded{}, nil
+	case "task-toggled":
+		return TaskToggled{TaskID: wire.TaskID}, nil
+	case "note-draft":
+		return NoteDraftChanged{Value: wire.Value}, nil
+	case "note-added":
+		return NoteAdded{}, nil
+	case "search-changed":
+		return SearchChanged{Value: wire.Value}, nil
+	case "filter":
 		filter, err := parseFilter(wire.Filter)
 		if err != nil {
 			return nil, err
 		}
 		return FilterRequested{Filter: filter}, nil
+	case "connectivity":
+		return ConnectivityChanged{Online: wire.Online}, nil
+	case "sync-requested":
+		return SyncRequested{}, nil
 	case "save-succeeded":
-		return SaveSucceeded{Tasks: cloneTasks(wire.Tasks)}, nil
+		return SaveSucceeded{Incidents: cloneIncidents(wire.Incidents)}, nil
 	case "save-failed":
 		return SaveFailed{Message: wire.Message}, nil
+	case "conflict":
+		if wire.Conflict == nil {
+			return nil, fmt.Errorf("forgeflow: conflict payload missing")
+		}
+		return ConflictDetected{Conflict: *wire.Conflict}, nil
+	case "keep-local":
+		return KeepLocalRequested{}, nil
+	case "accept-remote":
+		return AcceptRemoteRequested{}, nil
 	default:
-		return nil, fmt.Errorf("taskboard: unknown message %q", wire.Type)
+		return nil, fmt.Errorf("forgeflow: unknown message %q", wire.Type)
 	}
 }
 
 func filterName(filter Filter) string {
 	return FilterFold(filter, FilterCases[string]{
-		FilterAll:       func() string { return "all" },
-		FilterActive:    func() string { return "active" },
-		FilterCompleted: func() string { return "completed" },
+		FilterAll:      func() string { return "all" },
+		FilterActive:   func() string { return "active" },
+		FilterCritical: func() string { return "critical" },
+		FilterResolved: func() string { return "resolved" },
 	})
 }
 
@@ -487,13 +735,102 @@ func parseFilter(value string) (Filter, error) {
 		return FilterAll{}, nil
 	case "active":
 		return FilterActive{}, nil
-	case "completed":
-		return FilterCompleted{}, nil
+	case "critical":
+		return FilterCritical{}, nil
+	case "resolved":
+		return FilterResolved{}, nil
 	default:
-		return nil, fmt.Errorf("taskboard: invalid filter %q", value)
+		return nil, fmt.Errorf("forgeflow: invalid filter %q", value)
 	}
 }
 
-func cloneTasks(tasks []Task) []Task {
-	return append([]Task(nil), tasks...)
+func encodeSync(sync SyncState) (string, *Conflict) {
+	return SyncStateFold(sync, SyncStateCases[struct {
+			Name     string
+			Conflict *Conflict
+		}]{
+			SyncIdle: func() struct {
+				Name     string
+				Conflict *Conflict
+			} {
+				return struct {
+					Name     string
+					Conflict *Conflict
+				}{"idle", nil}
+			},
+			SyncPending: func() struct {
+				Name     string
+				Conflict *Conflict
+			} {
+				return struct {
+					Name     string
+					Conflict *Conflict
+				}{"pending", nil}
+			},
+			SyncRunning: func() struct {
+				Name     string
+				Conflict *Conflict
+			} {
+				return struct {
+					Name     string
+					Conflict *Conflict
+				}{"running", nil}
+			},
+			SyncConflicted: func(conflict Conflict) struct {
+				Name     string
+				Conflict *Conflict
+			} {
+				return struct {
+					Name     string
+					Conflict *Conflict
+				}{"conflicted", &conflict}
+			},
+		}).Name, SyncStateFold(sync, SyncStateCases[*Conflict]{
+			SyncIdle: func() *Conflict { return nil }, SyncPending: func() *Conflict { return nil },
+			SyncRunning:    func() *Conflict { return nil },
+			SyncConflicted: func(conflict Conflict) *Conflict { return &conflict },
+		})
+}
+
+func decodeSync(name string, conflict *Conflict) (SyncState, error) {
+	switch name {
+	case "", "idle":
+		return SyncIdle{}, nil
+	case "pending":
+		return SyncPending{}, nil
+	case "running":
+		return SyncRunning{}, nil
+	case "conflicted":
+		if conflict == nil {
+			return nil, fmt.Errorf("forgeflow: sync conflict missing")
+		}
+		return SyncConflicted{Conflict: *conflict}, nil
+	default:
+		return nil, fmt.Errorf("forgeflow: invalid sync state %q", name)
+	}
+}
+
+func nowLabel() string { return time.Now().UTC().Format("15:04") }
+
+func cloneIncidents(incidents []Incident) []Incident {
+	out := make([]Incident, len(incidents))
+	for i, incident := range incidents {
+		out[i] = incident
+		out[i].Tasks = append([]Task(nil), incident.Tasks...)
+		out[i].Timeline = append([]Activity(nil), incident.Timeline...)
+	}
+	return out
+}
+
+func selectedIncident(model Model) (Incident, bool) {
+	for _, incident := range model.Incidents {
+		if incident.ID == model.SelectedID {
+			return incident, true
+		}
+	}
+	return Incident{}, false
+}
+
+func containsFold(value, query string) bool {
+	return strings.Contains(strings.ToLower(value), strings.ToLower(strings.TrimSpace(query)))
 }
