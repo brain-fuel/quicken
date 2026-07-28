@@ -231,7 +231,7 @@ func writeProgramHeaders(w http.ResponseWriter) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set(
 		"Content-Security-Policy",
-		"default-src 'self'; script-src 'self'; connect-src 'self' ws: wss:; object-src 'none'; base-uri 'self'",
+		"default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' ws: wss:; object-src 'none'; base-uri 'self'",
 	)
 	w.Header().Set("Referrer-Policy", "same-origin")
 }
