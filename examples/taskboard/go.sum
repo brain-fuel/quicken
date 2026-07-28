@@ -77,8 +77,8 @@ goforge.dev/quicken/native v0.1.0 h1:PsAirBvDLmmOXv4lUqTnKQRXWvga9fPlhCSwvAnfmUQ
 goforge.dev/quicken/native v0.1.0/go.mod h1:biI3aBbKjfSb38ENAbIXmsTlkzGX9aN3sMmW+L+ApZ0=
 goforge.dev/quicken/tui v0.1.0 h1:v6zwjfZc4kbLiJ8bgMoUzcykFgANBIM6xHRE6qCJzbc=
 goforge.dev/quicken/tui v0.1.0/go.mod h1:e8pk9WixAwXxr9VhtByPAR27upm2u12Dy7Nq7N/M8L4=
-goforge.dev/quicken/web v0.8.0 h1:Nl0oN85+k0bEWF73e0SEMNIXpwyeiV+FnMcncMxs+2E=
-goforge.dev/quicken/web v0.8.0/go.mod h1:33W6F/oyOV6Drzn4JDLmtYZwpGBwSbnqIe/zycOhd6Y=
+goforge.dev/quicken/web v0.8.1 h1:oPxH0m/C+mix2AQSFWHcseBVDnvzLZgIkImx07Uv6sw=
+goforge.dev/quicken/web v0.8.1/go.mod h1:33W6F/oyOV6Drzn4JDLmtYZwpGBwSbnqIe/zycOhd6Y=
 golang.org/x/exp v0.0.0-20250408133849-7e4ce0ab07d0 h1:R84qjqJb5nVJMxqWYb3np9L5ZsaDtB+a39EqjV0JSUM=
 golang.org/x/exp v0.0.0-20250408133849-7e4ce0ab07d0/go.mod h1:S9Xr4PYopiDyqSyp5NjCrhFrqg6A5zA2E/iPHPhqnS8=
 golang.org/x/exp/shiny v0.0.0-20250408133849-7e4ce0ab07d0 h1:tMSqXTK+AQdW3LpCbfatHSRPHeW6+2WuxaVQuHftn80=

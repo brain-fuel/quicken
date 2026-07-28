@@ -9,7 +9,7 @@ require (
 	goforge.dev/quicken/mobile v0.1.0
 	goforge.dev/quicken/native v0.1.0
 	goforge.dev/quicken/tui v0.1.0
-	goforge.dev/quicken/web v0.8.0
+	goforge.dev/quicken/web v0.8.1
 	pgregory.net/rapid v1.3.0
 )
 
