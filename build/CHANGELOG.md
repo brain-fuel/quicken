@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.4.0
+
+- Add host and Windows/macOS/Linux amd64/arm64 server artifact targets.
+- Add Windows/macOS/Linux amd64/arm64 TUI artifact targets.
+- Generate the complete server, TUI, and desktop architecture task matrix in
+  every starter.
+
 ## v0.3.0
 
 - Add `quicken-build init` for a generated full-stack Go+ starter.

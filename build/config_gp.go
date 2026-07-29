@@ -37,8 +37,11 @@ type Android struct {
 }
 
 type Toolchain struct {
-	CC  string `yaml:"cc"`
-	CXX string `yaml:"cxx"`
+	CC       string `yaml:"cc"`
+	CXX      string `yaml:"cxx"`
+	CFlags   string `yaml:"cflags"`
+	CXXFlags string `yaml:"cxxflags"`
+	LDFlags  string `yaml:"ldflags"`
 }
 
 type Desktop struct {

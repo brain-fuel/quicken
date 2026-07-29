@@ -21,3 +21,17 @@ targets:
   android:
     minimum_sdk: 26
     target_sdk: 36
+  desktop:
+    toolchains:
+      darwin-amd64:
+        cc: clang
+        cxx: clang++
+        cflags: "-arch x86_64"
+        cxxflags: "-arch x86_64"
+        ldflags: "-arch x86_64"
+      darwin-arm64:
+        cc: clang
+        cxx: clang++
+        cflags: "-arch arm64"
+        cxxflags: "-arch arm64"
+        ldflags: "-arch arm64"

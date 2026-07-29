@@ -37,6 +37,7 @@ jobs:
           publish build/v0.1.0 "Quicken Build v0.1.0"
           publish build/v0.2.0 "Quicken Build v0.2.0"
           publish build/v0.3.0 "Quicken Build v0.3.0"
+          publish build/v0.4.0 "Quicken Build v0.4.0"
           publish native/v0.2.0 "Quicken Native v0.2.0"
           publish desktop/v0.2.0 "Quicken Desktop v0.2.0"
           publish mobile/v0.2.0 "Quicken Mobile v0.2.0"

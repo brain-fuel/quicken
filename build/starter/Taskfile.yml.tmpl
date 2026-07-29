@@ -1,7 +1,7 @@
 version: '3'
 
 vars:
-  QUICKEN_BUILD: go run goforge.dev/quicken/build/cmd/quicken-build@v0.3.0
+  QUICKEN_BUILD: go run goforge.dev/quicken/build/cmd/quicken-build@v0.4.0
 
 tasks:
   doctor:
@@ -10,8 +10,46 @@ tasks:
     cmds: ['{{.QUICKEN_BUILD}} build web']
   build:tui:
     cmds: ['{{.QUICKEN_BUILD}} build tui']
+  build:tui:linux:amd64:
+    cmds: ['{{.QUICKEN_BUILD}} build tui-linux-amd64']
+  build:tui:linux:arm64:
+    cmds: ['{{.QUICKEN_BUILD}} build tui-linux-arm64']
+  build:tui:windows:amd64:
+    cmds: ['{{.QUICKEN_BUILD}} build tui-windows-amd64']
+  build:tui:windows:arm64:
+    cmds: ['{{.QUICKEN_BUILD}} build tui-windows-arm64']
+  build:tui:macos:amd64:
+    cmds: ['{{.QUICKEN_BUILD}} build tui-darwin-amd64']
+  build:tui:macos:arm64:
+    cmds: ['{{.QUICKEN_BUILD}} build tui-darwin-arm64']
+  build:server:
+    cmds: ['{{.QUICKEN_BUILD}} build server']
+  build:server:linux:amd64:
+    cmds: ['{{.QUICKEN_BUILD}} build server-linux-amd64']
+  build:server:linux:arm64:
+    cmds: ['{{.QUICKEN_BUILD}} build server-linux-arm64']
+  build:server:windows:amd64:
+    cmds: ['{{.QUICKEN_BUILD}} build server-windows-amd64']
+  build:server:windows:arm64:
+    cmds: ['{{.QUICKEN_BUILD}} build server-windows-arm64']
+  build:server:macos:amd64:
+    cmds: ['{{.QUICKEN_BUILD}} build server-darwin-amd64']
+  build:server:macos:arm64:
+    cmds: ['{{.QUICKEN_BUILD}} build server-darwin-arm64']
   build:desktop:
     cmds: ['{{.QUICKEN_BUILD}} build desktop']
+  build:desktop:windows:amd64:
+    cmds: ['{{.QUICKEN_BUILD}} build desktop-windows-amd64']
+  build:desktop:windows:arm64:
+    cmds: ['{{.QUICKEN_BUILD}} build desktop-windows-arm64']
+  build:desktop:macos:amd64:
+    cmds: ['{{.QUICKEN_BUILD}} build desktop-darwin-amd64']
+  build:desktop:macos:arm64:
+    cmds: ['{{.QUICKEN_BUILD}} build desktop-darwin-arm64']
+  build:desktop:linux:amd64:
+    cmds: ['{{.QUICKEN_BUILD}} build desktop-linux-amd64']
+  build:desktop:linux:arm64:
+    cmds: ['{{.QUICKEN_BUILD}} build desktop-linux-arm64']
   build:ios:
     cmds: ['{{.QUICKEN_BUILD}} build ios-simulator']
   build:ios:device:

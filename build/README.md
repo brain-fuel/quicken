@@ -5,7 +5,7 @@ applications. It normalizes web, TUI, desktop, iOS, and Android target names
 and keeps platform packaging out of application Taskfiles.
 
 ```sh
-go run goforge.dev/quicken/build/cmd/quicken-build@v0.3.0 \
+go run goforge.dev/quicken/build/cmd/quicken-build@v0.4.0 \
   -module example.com/myapp \
   -name MyApp \
   -appid com.example.myapp \
@@ -40,6 +40,9 @@ targets:
       windows-amd64:
         cc: x86_64-w64-mingw32-gcc
         cxx: x86_64-w64-mingw32-g++
+        cflags: "-O2"
+        cxxflags: "-O2"
+        ldflags: "-static"
 ```
 
 MIT, Copyright (c) 2026 Goforge.

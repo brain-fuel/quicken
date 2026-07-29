@@ -48,6 +48,8 @@ func buildTarget(config Config, target string, options Options) error {
 		return buildWeb(config, options)
 	case "tui":
 		return goBuild(config.Commands.TUI, filepath.Join(options.Dist, artifactName(config, "tui")), nil)
+	case "server":
+		return goBuild(config.Commands.Server, filepath.Join(options.Dist, artifactName(config, "server")), nil)
 	case "desktop":
 		return goBuild(config.Commands.Desktop, filepath.Join(options.Dist, artifactName(config, "desktop")), nil)
 	case "ios-simulator":
@@ -57,6 +59,12 @@ func buildTarget(config Config, target string, options Options) error {
 	case "android-emulator", "android-device":
 		return androidUnavailable(config)
 	default:
+		if strings.HasPrefix(target, "tui-") {
+			return buildPortableCross(config, target, "tui", config.Commands.TUI, options)
+		}
+		if strings.HasPrefix(target, "server-") {
+			return buildPortableCross(config, target, "server", config.Commands.Server, options)
+		}
 		return buildDesktopCross(config, target, options)
 	}
 }
@@ -180,11 +188,52 @@ func buildDesktopCross(config Config, target string, options Options) error {
 		if toolchain.CXX != "" {
 			env["CXX"] = toolchain.CXX
 		}
+		if toolchain.CFlags != "" {
+			env["CGO_CFLAGS"] = toolchain.CFlags
+		}
+		if toolchain.CXXFlags != "" {
+			env["CGO_CXXFLAGS"] = toolchain.CXXFlags
+		}
+		if toolchain.LDFlags != "" {
+			env["CGO_LDFLAGS"] = toolchain.LDFlags
+		}
 	}
 	if err := goBuild(config.Commands.Desktop, filepath.Join(options.Dist, name), env); err != nil {
 		return fmt.Errorf("desktop target %s requires a compatible Gio C toolchain: %w", target, err)
 	}
 	return nil
+}
+
+func buildPortableCross(
+	config Config,
+	target string,
+	family string,
+	pkg string,
+	options Options,
+) error {
+	parts := strings.Split(target, "-")
+	if len(parts) != 3 || parts[0] != family {
+		return fmt.Errorf("invalid %s target %q", family, target)
+	}
+	goos, goarch := parts[1], parts[2]
+	switch goos {
+	case "windows", "darwin", "linux":
+	default:
+		return fmt.Errorf("unsupported %s operating system %q", family, goos)
+	}
+	switch goarch {
+	case "amd64", "arm64":
+	default:
+		return fmt.Errorf("unsupported %s architecture %q", family, goarch)
+	}
+	suffix := ""
+	if goos == "windows" {
+		suffix = ".exe"
+	}
+	name := fmt.Sprintf("%s-%s-%s-%s%s", strings.ToLower(config.Application.Name), family, goos, goarch, suffix)
+	return goBuild(pkg, filepath.Join(options.Dist, name), map[string]string{
+		"GOOS": goos, "GOARCH": goarch, "CGO_ENABLED": "0",
+	})
 }
 
 func buildIOSSimulator(config Config, options Options) error {
