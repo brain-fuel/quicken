@@ -91,6 +91,7 @@ type Model struct {
 	NextIncidentID int
 	NextTaskID   int
 	NextActivityID int
+	MutationRevision uint64
 }
 
 //goplus:derive gen
@@ -142,6 +143,7 @@ type modelWire struct {
 	NextIncidentID  int        `json:"next_incident_id"`
 	NextTaskID      int        `json:"next_task_id"`
 	NextActivityID  int        `json:"next_activity_id"`
+	MutationRevision uint64    `json:"mutation_revision"`
 }
 
 type messageWire struct {
@@ -200,6 +202,7 @@ func ModelCodec() program.Codec[Model] {
 				Online: model.Online, Saving: model.Saving, Error: model.Error,
 				NextIncidentID: model.NextIncidentID, NextTaskID: model.NextTaskID,
 				NextActivityID: model.NextActivityID,
+				MutationRevision: model.MutationRevision,
 			})
 		},
 		Decode: func(data []byte) (Model, error) {
@@ -223,6 +226,7 @@ func ModelCodec() program.Codec[Model] {
 				Filter: filter, Sync: sync, Online: wire.Online, Saving: wire.Saving,
 				Error: wire.Error, NextIncidentID: wire.NextIncidentID,
 				NextTaskID: wire.NextTaskID, NextActivityID: wire.NextActivityID,
+				MutationRevision: wire.MutationRevision,
 			}, nil
 		},
 	}

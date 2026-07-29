@@ -217,7 +217,7 @@ func LocalSave(model Model) program.Cmd[Msg] {
 }
 
 func RemoteSave(model Model) program.Cmd[Msg] {
-	requestID := fmt.Sprintf("save-%d-%d", model.NextIncidentID, len(model.Incidents))
+	requestID := fmt.Sprintf("save-%d", model.MutationRevision)
 	return browser.MustRemote(
 		requestID, "forgeflow.save", SaveRequest{Incidents: cloneIncidents(model.Incidents)},
 		func(response SaveResponse) Msg { return SaveSucceeded{Incidents: cloneIncidents(response.Incidents)} },
@@ -245,6 +245,7 @@ func VisibleIncidents(model Model) []Incident {
 }
 
 func dirty(model Model) Model {
+	model.MutationRevision++
 	model.Saving = true
 	model.Error = ""
 	if model.Online {

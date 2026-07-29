@@ -231,23 +231,24 @@ func SyncStateFold[R any](s SyncState, cs SyncStateCases[R]) R {
 }
 
 type Model struct {
-	Incidents      []Incident
-	SelectedID     int
-	IncidentDraft  string
-	SummaryDraft   string
-	LocationDraft  string
-	OwnerDraft     string
-	TaskDraft      string
-	NoteDraft      string
-	Query          string
-	Filter         Filter
-	Sync           SyncState
-	Online         bool
-	Saving         bool
-	Error          string
-	NextIncidentID int
-	NextTaskID     int
-	NextActivityID int
+	Incidents        []Incident
+	SelectedID       int
+	IncidentDraft    string
+	SummaryDraft     string
+	LocationDraft    string
+	OwnerDraft       string
+	TaskDraft        string
+	NoteDraft        string
+	Query            string
+	Filter           Filter
+	Sync             SyncState
+	Online           bool
+	Saving           bool
+	Error            string
+	NextIncidentID   int
+	NextTaskID       int
+	NextActivityID   int
+	MutationRevision uint64
 }
 
 //goplus:enum Msg
@@ -480,24 +481,25 @@ type Bootstrap struct {
 }
 
 type modelWire struct {
-	Incidents      []Incident `json:"incidents"`
-	SelectedID     int        `json:"selected_id"`
-	IncidentDraft  string     `json:"incident_draft"`
-	SummaryDraft   string     `json:"summary_draft"`
-	LocationDraft  string     `json:"location_draft"`
-	OwnerDraft     string     `json:"owner_draft"`
-	TaskDraft      string     `json:"task_draft"`
-	NoteDraft      string     `json:"note_draft"`
-	Query          string     `json:"query"`
-	Filter         string     `json:"filter"`
-	Sync           string     `json:"sync"`
-	Conflict       *Conflict  `json:"conflict,omitempty"`
-	Online         bool       `json:"online"`
-	Saving         bool       `json:"saving"`
-	Error          string     `json:"error"`
-	NextIncidentID int        `json:"next_incident_id"`
-	NextTaskID     int        `json:"next_task_id"`
-	NextActivityID int        `json:"next_activity_id"`
+	Incidents        []Incident `json:"incidents"`
+	SelectedID       int        `json:"selected_id"`
+	IncidentDraft    string     `json:"incident_draft"`
+	SummaryDraft     string     `json:"summary_draft"`
+	LocationDraft    string     `json:"location_draft"`
+	OwnerDraft       string     `json:"owner_draft"`
+	TaskDraft        string     `json:"task_draft"`
+	NoteDraft        string     `json:"note_draft"`
+	Query            string     `json:"query"`
+	Filter           string     `json:"filter"`
+	Sync             string     `json:"sync"`
+	Conflict         *Conflict  `json:"conflict,omitempty"`
+	Online           bool       `json:"online"`
+	Saving           bool       `json:"saving"`
+	Error            string     `json:"error"`
+	NextIncidentID   int        `json:"next_incident_id"`
+	NextTaskID       int        `json:"next_task_id"`
+	NextActivityID   int        `json:"next_activity_id"`
+	MutationRevision uint64     `json:"mutation_revision"`
 }
 
 type messageWire struct {
@@ -555,7 +557,8 @@ func ModelCodec() program.Codec[Model] {
 				Filter: filterName(model.Filter), Sync: syncName, Conflict: conflict,
 				Online: model.Online, Saving: model.Saving, Error: model.Error,
 				NextIncidentID: model.NextIncidentID, NextTaskID: model.NextTaskID,
-				NextActivityID: model.NextActivityID,
+				NextActivityID:   model.NextActivityID,
+				MutationRevision: model.MutationRevision,
 			})
 		},
 		Decode: func(data []byte) (Model, error) {
@@ -579,6 +582,7 @@ func ModelCodec() program.Codec[Model] {
 				Filter: filter, Sync: sync, Online: wire.Online, Saving: wire.Saving,
 				Error: wire.Error, NextIncidentID: wire.NextIncidentID,
 				NextTaskID: wire.NextTaskID, NextActivityID: wire.NextActivityID,
+				MutationRevision: wire.MutationRevision,
 			}, nil
 		},
 	}

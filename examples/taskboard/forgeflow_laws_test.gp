@@ -107,6 +107,18 @@ func TestOfflineMutationQueuesSynchronization(t *testing.T) {
 	if len(step.Model.Incidents) != len(model.Incidents)+1 {
 		t.Fatalf("incident count = %d", len(step.Model.Incidents))
 	}
+	if step.Model.MutationRevision != model.MutationRevision+1 {
+		t.Fatalf("mutation revision = %d", step.Model.MutationRevision)
+	}
+}
+
+func TestConsecutiveMutationsHaveDistinctRevisions(t *testing.T) {
+	model := InitialModel()
+	first := Update(model, TaskToggled(1), LocalSave)
+	second := Update(first.Model, StatusAdvanced(1), LocalSave)
+	if first.Model.MutationRevision == second.Model.MutationRevision {
+		t.Fatalf("consecutive mutations reused revision %d", first.Model.MutationRevision)
+	}
 }
 
 func TestConflictResolutionSelectsRequestedVersion(t *testing.T) {
