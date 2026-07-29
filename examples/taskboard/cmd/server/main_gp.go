@@ -7,6 +7,7 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"os"
 
 	taskboard "goforge.dev/cadence-taskboard"
 	"goforge.dev/cadence/program"
@@ -60,6 +61,10 @@ func main() {
 	mux.Handle("/live", live.FullPage("taskboard-live-root"))
 
 	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir("web"))))
-	log.Print("ForgeFlow listening on http://localhost:8080")
-	log.Fatal(http.ListenAndServe(":8080", mux))
+	address := os.Getenv("FORGEFLOW_ADDR")
+	if address == "" {
+		address = ":8080"
+	}
+	log.Printf("ForgeFlow listening on %s", address)
+	log.Fatal(http.ListenAndServe(address, mux))
 }
