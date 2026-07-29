@@ -383,19 +383,35 @@ func (s *domState[Model, Msg]) setMessageSink(sink program.Dispatch[Msg]) {
 func eventData(event js.Value) browser.EventData {
 	target := event.Get("target")
 	data := browser.EventData{
-		Key:      event.Get("key").String(),
-		Code:     event.Get("code").String(),
-		AltKey:   event.Get("altKey").Bool(),
-		CtrlKey:  event.Get("ctrlKey").Bool(),
-		MetaKey:  event.Get("metaKey").Bool(),
-		ShiftKey: event.Get("shiftKey").Bool(),
-		Repeat:   event.Get("repeat").Bool(),
+		Key:      jsString(event, "key"),
+		Code:     jsString(event, "code"),
+		AltKey:   jsBool(event, "altKey"),
+		CtrlKey:  jsBool(event, "ctrlKey"),
+		MetaKey:  jsBool(event, "metaKey"),
+		ShiftKey: jsBool(event, "shiftKey"),
+		Repeat:   jsBool(event, "repeat"),
 	}
 	if target.Type() != js.TypeNull && target.Type() != js.TypeUndefined {
-		data.Value = target.Get("value").String()
-		data.Checked = target.Get("checked").Bool()
+		data.Value = jsString(target, "value")
+		data.Checked = jsBool(target, "checked")
 	}
 	return data
+}
+
+func jsString(value js.Value, name string) string {
+	field := value.Get(name)
+	if field.Type() != js.TypeString {
+		return ""
+	}
+	return field.String()
+}
+
+func jsBool(value js.Value, name string) bool {
+	field := value.Get(name)
+	if field.Type() != js.TypeBoolean {
+		return false
+	}
+	return field.Bool()
 }
 
 func (s *domState[Model, Msg]) isComposing(target js.Value) bool {
