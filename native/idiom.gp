@@ -1,0 +1,22 @@
+package native
+
+import "gioui.org/unit"
+
+// Idiom contains mechanical layout policy owned by a target platform rather
+// than by the application's semantic element tree.
+type Idiom struct {
+	Gap                  unit.Dp
+	MinimumControlHeight unit.Dp
+}
+
+func DesktopIdiom() Idiom {
+	return Idiom{Gap: unit.Dp(4), MinimumControlHeight: unit.Dp(32)}
+}
+
+func IOSIdiom() Idiom {
+	return Idiom{Gap: unit.Dp(8), MinimumControlHeight: unit.Dp(44)}
+}
+
+func AndroidIdiom() Idiom {
+	return Idiom{Gap: unit.Dp(8), MinimumControlHeight: unit.Dp(48)}
+}

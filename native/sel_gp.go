@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"gioui.org/layout"
+	"gioui.org/unit"
 	"gioui.org/widget/material"
 	"goforge.dev/cadence/sel"
 )
@@ -16,12 +17,20 @@ func SELView[State any, Msg any](
 	render func(State) sel.Element[Msg],
 	palette Palette,
 ) View[State, Msg] {
+	return SELViewWithIdiom(render, palette, DesktopIdiom())
+}
+
+func SELViewWithIdiom[State any, Msg any](
+	render func(State) sel.Element[Msg],
+	palette Palette,
+	idiom Idiom,
+) View[State, Msg] {
 	return func(gtx layout.Context, state State, ui *UI[Msg]) layout.Dimensions {
 		root := render(state)
 		if err := sel.Validate(root, sel.TargetGio{}); err != nil {
 			return material.Body1(ui.Theme, "render error: "+err.Error()).Layout(gtx)
 		}
-		return elementWidget(root, ui, palette)(gtx)
+		return elementWidget(root, ui, palette, idiom)(gtx)
 	}
 }
 
@@ -29,10 +38,11 @@ func elementWidget[Msg any](
 	element sel.Element[Msg],
 	ui *UI[Msg],
 	palette Palette,
+	idiom Idiom,
 ) layout.Widget {
 	children := make([]layout.Widget, 0, len(element.Children))
 	for _, child := range element.Children {
-		children = append(children, elementWidget(child, ui, palette))
+		children = append(children, elementWidget(child, ui, palette, idiom))
 	}
 	content := func(gtx layout.Context) layout.Dimensions {
 		name := sel.KindName(element.Kind)
@@ -70,9 +80,9 @@ func elementWidget[Msg any](
 			}
 			return ui.Label(gtx, childText(element))
 		case "row":
-			return flexLayout(gtx, layout.Horizontal, children)
+			return flexLayout(gtx, layout.Horizontal, children, idiom.Gap)
 		case "paragraph", "column", "stack", "scroll", "form", "list", "table":
-			return flexLayout(gtx, layout.Vertical, children)
+			return flexLayout(gtx, layout.Vertical, children, idiom.Gap)
 		case "image":
 			return ui.Label(gtx, "[image: "+element.Description+"]")
 		case "progress":
@@ -85,10 +95,18 @@ func elementWidget[Msg any](
 		case "select":
 			return ui.Label(gtx, element.Description+": "+element.Value)
 		default:
-			return flexLayout(gtx, layout.Vertical, children)
+			return flexLayout(gtx, layout.Vertical, children, idiom.Gap)
 		}
 	}
 	return func(gtx layout.Context) layout.Dimensions {
+		name := sel.KindName(element.Kind)
+		if name == "button" || name == "link" || name == "text-input" ||
+			name == "text-area" || name == "checkbox" || name == "select" {
+			height := gtx.Dp(idiom.MinimumControlHeight)
+			if gtx.Constraints.Min.Y < height {
+				gtx.Constraints.Min.Y = height
+			}
+		}
 		return Styled(gtx, element.Style, palette, content)
 	}
 }
@@ -97,13 +115,14 @@ func flexLayout(
 	gtx layout.Context,
 	axis layout.Axis,
 	children []layout.Widget,
+	gap unit.Dp,
 ) layout.Dimensions {
 	items := make([]layout.FlexChild, 0, len(children))
 	for _, child := range children {
 		current := child
 		items = append(items, layout.Rigid(current))
 	}
-	return layout.Flex{Axis: axis, Gap: gtx.Dp(4)}.Layout(gtx, items...)
+	return layout.Flex{Axis: axis, Gap: gtx.Dp(gap)}.Layout(gtx, items...)
 }
 
 func eventMessage[Msg any](events []sel.Event[Msg], want string) (Msg, bool) {
