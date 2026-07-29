@@ -15,6 +15,10 @@ type RenderOptions struct {
 	MountID   string
 }
 
+// EmptyTextMarker preserves an otherwise invisible text-node position across
+// HTML parsing so hydration and subsequent path-based patches stay aligned.
+const EmptyTextMarker = "cadence-empty-text"
+
 func RenderHTML[Msg any](root Node[Msg], options RenderOptions) (string, error) {
 	var out strings.Builder
 	if err := renderNode(&out, root, options, nil); err != nil {
@@ -27,6 +31,10 @@ func renderNode[Msg any](out *strings.Builder, node Node[Msg], options RenderOpt
 	switch any(node.Kind).(type) {
 	case NodeText:
 
+		if node.Text == "" {
+			out.WriteString("<!--" + EmptyTextMarker + "-->")
+			return nil
+		}
 		out.WriteString(html.EscapeString(node.Text))
 	case NodeFragment:
 

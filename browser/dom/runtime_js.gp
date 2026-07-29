@@ -128,7 +128,15 @@ func (s *domState[Model, Msg]) commit(next browser.Node[Msg]) {
 func (s *domState[Model, Msg]) hydrateNode(value js.Value, node browser.Node[Msg], path []int) error {
 	switch browser.NodeKindName(node.Kind) {
 	case "text":
-		if value.Get("nodeType").Int() != 3 || value.Get("nodeValue").String() != node.Text {
+		if node.Text == "" && value.Get("nodeType").Int() == 8 &&
+			value.Get("nodeValue").String() == browser.EmptyTextMarker {
+			parent := value.Get("parentNode")
+			empty := js.Global().Get("document").Call("createTextNode", "")
+			parent.Call("replaceChild", empty, value)
+			return nil
+		}
+		if value.Get("nodeType").Int() != 3 ||
+			value.Get("nodeValue").String() != node.Text {
 			return fmt.Errorf("quicken/web/browser/dom: hydration text mismatch at %s", pathName(path))
 		}
 		return nil
