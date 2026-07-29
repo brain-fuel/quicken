@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.0
+
+- Add a semantic mobile adapter that selects iOS or Android interaction idioms.
+- Apply environment safe-area insets without forking application views.
+- Enforce 44 dp iOS and 48 dp Android minimum interactive-control heights.
+
 ## v0.1.1
 
 - Generate valid iOS and Android platform variants from build-tagged Go+

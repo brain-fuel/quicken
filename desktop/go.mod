@@ -5,7 +5,7 @@ go 1.26.0
 require (
 	gioui.org v0.10.1
 	goforge.dev/cadence v0.4.0
-	goforge.dev/quicken/native v0.1.0
+	goforge.dev/quicken/native v0.2.0
 )
 
 require goforge.dev/goplus v0.139.1 // indirect
