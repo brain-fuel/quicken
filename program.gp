@@ -80,7 +80,10 @@ func (r ProgramRegion[Bootstrap, Model, Msg]) ServeHTTP(w http.ResponseWriter, r
 		http.Error(w, "program render failed", http.StatusInternalServerError)
 		return
 	}
-	writeProgramHeaders(w)
+	if err := writeProgramHeaders(w, req); err != nil {
+		http.Error(w, "program security setup failed", http.StatusInternalServerError)
+		return
+	}
 	_, _ = w.Write([]byte(
 		rendered.HTML + rendered.NoScriptHTML + rendered.ManifestTag + rendered.AssetTags,
 	))
@@ -96,7 +99,10 @@ func (p FullPageProgram[Bootstrap, Model, Msg]) ServeHTTP(w http.ResponseWriter,
 		http.Error(w, "program render failed", http.StatusInternalServerError)
 		return
 	}
-	writeProgramHeaders(w)
+	if err := writeProgramHeaders(w, req); err != nil {
+		http.Error(w, "program security setup failed", http.StatusInternalServerError)
+		return
+	}
 	_, _ = w.Write([]byte(rendered.Document))
 }
 
@@ -226,7 +232,7 @@ func renderAssetTags(assets BrowserAssets) string {
 		`" data-wasm="` + html.EscapeString(assets.WasmURL) + `"></script>`
 }
 
-func writeProgramHeaders(w http.ResponseWriter) {
+func writeProgramHeaders(w http.ResponseWriter, req *http.Request) error {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set(
@@ -234,6 +240,23 @@ func writeProgramHeaders(w http.ResponseWriter) {
 		"default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' ws: wss:; object-src 'none'; base-uri 'self'",
 	)
 	w.Header().Set("Referrer-Policy", "same-origin")
+	token := ""
+	if existing, err := req.Cookie("cadence_csrf"); err == nil {
+		token = existing.Value
+	}
+	if token == "" {
+		var bytes [32]byte
+		if _, err := rand.Read(bytes[:]); err != nil {
+			return err
+		}
+		token = hex.EncodeToString(bytes[:])
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name: "cadence_csrf", Value: token, Path: "/",
+		Secure: req.TLS != nil, HttpOnly: false,
+		SameSite: http.SameSiteStrictMode,
+	})
+	return nil
 }
 
 func escapeScriptJSON(data []byte) string {

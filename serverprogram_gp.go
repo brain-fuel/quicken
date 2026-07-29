@@ -129,7 +129,10 @@ func (r ServerProgramRegion[Bootstrap, Model, Msg]) ServeHTTP(w http.ResponseWri
 		http.Error(w, "program render failed", http.StatusInternalServerError)
 		return
 	}
-	writeProgramHeaders(w)
+	if err := writeProgramHeaders(w, req); err != nil {
+		http.Error(w, "program security setup failed", http.StatusInternalServerError)
+		return
+	}
 	_, _ = w.Write([]byte(
 		rendered.HTML + rendered.NoScriptHTML + rendered.ManifestTag + rendered.AssetTags,
 	))
@@ -151,7 +154,10 @@ func (p ServerFullPageProgram[Bootstrap, Model, Msg]) ServeHTTP(w http.ResponseW
 		http.Error(w, "program render failed", http.StatusInternalServerError)
 		return
 	}
-	writeProgramHeaders(w)
+	if err := writeProgramHeaders(w, req); err != nil {
+		http.Error(w, "program security setup failed", http.StatusInternalServerError)
+		return
+	}
 	_, _ = w.Write([]byte(rendered.Document))
 }
 

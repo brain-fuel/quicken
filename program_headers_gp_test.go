@@ -4,6 +4,7 @@
 package quicken
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -11,7 +12,10 @@ import (
 
 func TestProgramHeadersPermitWasmWithoutUnsafeEval(t *testing.T) {
 	response := httptest.NewRecorder()
-	writeProgramHeaders(response)
+	request := httptest.NewRequest("GET", "https://example.test/", nil)
+	if err := writeProgramHeaders(response, request); err != nil {
+		t.Fatal(err)
+	}
 
 	policy := response.Header().Get("Content-Security-Policy")
 	if !strings.Contains(policy, "script-src 'self' 'wasm-unsafe-eval'") {
@@ -19,5 +23,14 @@ func TestProgramHeadersPermitWasmWithoutUnsafeEval(t *testing.T) {
 	}
 	if strings.Contains(policy, " 'unsafe-eval'") {
 		t.Fatalf("CSP grants broad unsafe evaluation: %q", policy)
+	}
+	cookies := response.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].Name != "cadence_csrf" ||
+		len(cookies[0].Value) != 64 {
+		t.Fatalf("CSRF cookie not provisioned: %#v", cookies)
+	}
+	if !cookies[0].Secure || cookies[0].HttpOnly ||
+		cookies[0].SameSite != http.SameSiteStrictMode {
+		t.Fatalf("CSRF cookie attributes are unsafe or unreadable: %#v", cookies[0])
 	}
 }
