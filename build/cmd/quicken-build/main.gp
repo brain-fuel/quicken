@@ -13,10 +13,23 @@ func main() {
 	root := flag.String("root", ".", "application root")
 	dist := flag.String("dist", "", "artifact output directory")
 	device := flag.String("device", "", "emulator or simulator device name")
+	module := flag.String("module", "example.com/quicken-app", "starter Go module path")
+	name := flag.String("name", "QuickenApp", "starter application name")
+	appID := flag.String("appid", "", "starter application identifier")
 	flag.Parse()
 	if flag.NArg() != 2 {
 		fmt.Fprintln(os.Stderr, "usage: quicken-build [flags] <doctor|build|run> <target>")
 		os.Exit(2)
+	}
+	if flag.Arg(0) == "init" {
+		err := qbuild.InitStarter(qbuild.StarterOptions{
+			Directory: flag.Arg(1), Module: *module, Name: *name, Identifier: *appID,
+		})
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "quicken-build:", err)
+			os.Exit(1)
+		}
+		return
 	}
 	config, err := qbuild.Load(*configPath)
 	if err != nil {

@@ -1,0 +1,12 @@
+// Package app is authored in app.gp and web.gp. These blank imports keep
+// target modules available to the Go+ generator before generated Go exists.
+package app
+
+import (
+	_ "goforge.dev/cadence"
+	_ "goforge.dev/cadence/program"
+	_ "goforge.dev/cadence/sel"
+	_ "goforge.dev/quicken/web"
+	_ "goforge.dev/quicken/web/browser"
+	_ "goforge.dev/quicken/web/browser/dom"
+)

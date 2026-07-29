@@ -1,0 +1,30 @@
+version: '3'
+
+vars:
+  QUICKEN_BUILD: go run goforge.dev/quicken/build/cmd/quicken-build@v0.3.0
+
+tasks:
+  doctor:
+    cmds: ['{{.QUICKEN_BUILD}} doctor all']
+  build:web:
+    cmds: ['{{.QUICKEN_BUILD}} build web']
+  build:tui:
+    cmds: ['{{.QUICKEN_BUILD}} build tui']
+  build:desktop:
+    cmds: ['{{.QUICKEN_BUILD}} build desktop']
+  build:ios:
+    cmds: ['{{.QUICKEN_BUILD}} build ios-simulator']
+  build:ios:device:
+    cmds: ['{{.QUICKEN_BUILD}} build ios-device']
+  build:android:
+    cmds: ['{{.QUICKEN_BUILD}} build android-emulator']
+  run:web:
+    cmds: ['{{.QUICKEN_BUILD}} run web']
+  run:tui:
+    cmds: ['{{.QUICKEN_BUILD}} run tui']
+  run:desktop:
+    cmds: ['{{.QUICKEN_BUILD}} run desktop']
+  run:ios:
+    cmds: ['{{.QUICKEN_BUILD}} run ios-simulator']
+  run:android:
+    cmds: ['{{.QUICKEN_BUILD}} run android-emulator']

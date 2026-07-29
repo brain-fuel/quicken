@@ -1,0 +1,19 @@
+package main
+
+import (
+	"log"
+
+	"gioui.org/unit"
+	app "__MODULE__"
+	desktop "goforge.dev/quicken/desktop"
+	native "goforge.dev/quicken/native"
+)
+
+func main() {
+	_, err := desktop.Run(desktop.Application[app.Model, app.Msg]{
+		Logic: app.Logic(),
+		View: desktop.SELView(app.SemanticView, native.DefaultPalette()),
+		Window: native.WindowOptions{Title: "__NAME__", Width: unit.Dp(900), Height: unit.Dp(640)},
+	})
+	if err != nil { log.Fatal(err) }
+}

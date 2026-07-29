@@ -128,6 +128,15 @@ func buildWeb(config Config, options Options) error {
 		if err := copyFile(filepath.Join(out, "cadence-loader.js"), filepath.Join(options.Root, config.Targets.Web.Loader)); err != nil {
 			return err
 		}
+	} else {
+		webModule, err := command("go", "list", "-m", "-f", "{{.Dir}}", "goforge.dev/quicken/web")
+		if err != nil {
+			return fmt.Errorf("locate Quicken Web loader: %w", err)
+		}
+		loader := filepath.Join(strings.TrimSpace(webModule), "browser", "client", "cadence-loader.js")
+		if err := copyFile(filepath.Join(out, "cadence-loader.js"), loader); err != nil {
+			return err
+		}
 	}
 	return nil
 }

@@ -1,0 +1,18 @@
+package main
+
+import (
+	"log"
+
+	app "__MODULE__"
+	mobile "goforge.dev/quicken/mobile"
+	native "goforge.dev/quicken/native"
+)
+
+func main() {
+	_, err := mobile.Run(mobile.Application[app.Model, app.Msg]{
+		ID: "__APP_ID__",
+		Logic: app.Logic(),
+		View: mobile.SELView(app.SemanticView, native.DefaultPalette()),
+	})
+	if err != nil { log.Fatal(err) }
+}

@@ -1,0 +1,66 @@
+package app
+
+import (
+	"fmt"
+
+	"goforge.dev/cadence/program"
+	"goforge.dev/cadence/sel"
+	"goforge.dev/cadence/style"
+	browser "goforge.dev/quicken/web/browser"
+)
+
+type Model struct {
+	Count int
+}
+
+type Msg enum {
+	Increment
+	Decrement
+	Reset
+}
+
+func Logic() program.Logic[Model, Msg] {
+	return program.Logic[Model, Msg]{
+		Init: func() program.Step[Model, Msg] {
+			return program.Step[Model, Msg]{Model: Model{}, Command: program.None[Msg]()}
+		},
+		Update: func(model Model, message Msg) program.Step[Model, Msg] {
+			match message {
+			case Increment(): model.Count++
+			case Decrement(): model.Count--
+			case Reset(): model.Count = 0
+			}
+			return program.Step[Model, Msg]{Model: model, Command: program.None[Msg]()}
+		},
+	}
+}
+
+func SemanticView(model Model) sel.Element[Msg] {
+	return sel.Column[Msg](
+		sel.Heading[Msg](1, "__NAME__"),
+		sel.Status[Msg](fmt.Sprintf("Count: %d", model.Count)),
+		sel.Row[Msg](
+			sel.Button[Msg]("Decrease", Decrement()),
+			sel.Button[Msg]("Reset", Reset()),
+			sel.Button[Msg]("Increase", Increment()),
+		),
+	).WithKey("counter").WithStyle(
+		style.Default().WithPadding(style.All(1)).WithBorder(style.BorderRounded()),
+	)
+}
+
+func BrowserView(model Model) browser.Node[Msg] {
+	button := func(key, label string, message Msg) browser.Node[Msg] {
+		return browser.Element[Msg]("button", browser.Text[Msg](label)).
+			WithKey(key).WithAttribute("type", "button").
+			On(key, browser.EventClick(), func(browser.EventData) Msg { return message })
+	}
+	return browser.Element[Msg]("main",
+		browser.Element[Msg]("h1", browser.Text[Msg]("__NAME__")),
+		browser.Element[Msg]("p", browser.Text[Msg](fmt.Sprintf("Count: %d", model.Count))).
+			WithAttribute("role", "status"),
+		button("decrement", "Decrease", Decrement()),
+		button("reset", "Reset", Reset()),
+		button("increment", "Increase", Increment()),
+	).WithKey("counter")
+}

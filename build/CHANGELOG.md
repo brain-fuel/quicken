@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.3.0
+
+- Add `quicken-build init` for a generated full-stack Go+ starter.
+- Generate Cadence logic, a shared semantic view, browser view, WebAssembly,
+  server, TUI, desktop, mobile, Taskfile, and target manifest.
+- Resolve the generic browser loader from the released Quicken Web module when
+  applications do not provide a source path.
+- Use platform-specific desktop, iOS, and Android semantic idioms in generated
+  target adapters.
+
 ## v0.2.0
 
 - Add separate `ios-device` compilation against `iphoneos`, optional

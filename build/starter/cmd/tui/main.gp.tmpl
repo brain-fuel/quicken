@@ -1,0 +1,13 @@
+package main
+
+import (
+	"log"
+
+	app "__MODULE__"
+	tui "goforge.dev/quicken/tui"
+)
+
+func main() {
+	_, err := tui.Run(app.Logic(), tui.SELView(app.SemanticView, tui.DefaultPalette()), nil, nil)
+	if err != nil { log.Fatal(err) }
+}

@@ -1,0 +1,28 @@
+package main
+
+import (
+	"log"
+
+	"goforge.dev/cadence/program"
+	app "__MODULE__"
+	"goforge.dev/quicken/web/browser/dom"
+)
+
+func main() {
+	manifests, err := dom.ReadManifests()
+	if err != nil { log.Print(err); return }
+	for _, manifest := range manifests {
+		current := manifest
+		_, err = dom.Mount(dom.Options[app.Model, app.Msg]{
+			Manifest: current,
+			Logic: app.Logic(),
+			View: app.BrowserView,
+			Executor: dom.NewRemoteExecutor[app.Msg](
+				current,
+				program.ExecutorFunc[app.Msg](func(program.Cmd[app.Msg], program.Dispatch[app.Msg]) {}),
+			),
+		})
+		if err != nil && err != dom.ErrUnavailable { log.Print(err) }
+	}
+	select {}
+}

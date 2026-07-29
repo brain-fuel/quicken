@@ -1,0 +1,34 @@
+package app
+
+import (
+	"net/http"
+
+	"goforge.dev/cadence"
+	"goforge.dev/cadence/program"
+	browser "goforge.dev/quicken/web/browser"
+	quicken "goforge.dev/quicken/web"
+)
+
+type Bootstrap struct{}
+
+func WebProgram() quicken.Program[Bootstrap, Model, Msg] {
+	return quicken.Program[Bootstrap, Model, Msg]{
+		AppID: "__NAME_LOWER__",
+		ID: "__NAME_LOWER__-hydrated",
+		Plan: cadence.Hydrated(cadence.ActivateLoad()),
+		Assets: quicken.BrowserAssets{
+			Hash: "development",
+			WasmURL: "/assets/__NAME_LOWER__.wasm",
+			WasmExecURL: "/assets/wasm_exec.js",
+			LoaderURL: "/assets/cadence-loader.js",
+		},
+		DocumentTitle: "__NAME__",
+		Bootstrap: func(*http.Request) (Bootstrap, error) { return Bootstrap{}, nil },
+		Logic: func(Bootstrap) program.Logic[Model, Msg] { return Logic() },
+		View: BrowserView,
+		Skeleton: func(Bootstrap) browser.Node[Msg] {
+			return browser.Element[Msg]("p", browser.Text[Msg]("Loading __NAME__..."))
+		},
+		NoScript: func(Bootstrap) browser.Node[Msg] { return BrowserView(Model{}) },
+	}
+}
