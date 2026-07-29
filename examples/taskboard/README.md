@@ -18,19 +18,18 @@ synchronization, and explicit conflict resolution.
 ## Run locally
 
 ```sh
-go run ./cmd/tui
-go run ./cmd/desktop
-go run ./cmd/server
+task run:tui
+task run:desktop
+task run:web
+task run:ios
+task run:android
 ```
 
-Build browser assets into `web/`:
+The project uses GoForge Task with `quicken.yaml` as the only application build
+manifest. Check all configured toolchains with:
 
 ```sh
-mkdir -p web
-GOOS=js GOARCH=wasm go build -o web/forgeflow.wasm ./cmd/wasm
-cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" web/wasm_exec.js
-cp ../../browser/client/cadence-loader.js web/cadence-loader.js
-go run ./cmd/server
+task doctor
 ```
 
 Open `/` for hydrated ownership, `/island` for a composable region, or `/live`
@@ -39,15 +38,20 @@ for server-owned state.
 ## Package native targets
 
 ```sh
-go build -o dist/forgeflow-tui ./cmd/tui
-go build -o dist/forgeflow-desktop ./cmd/desktop
-gogio -target android -appid dev.goforge.forgeflow ./cmd/mobile
-gogio -target ios -appid dev.goforge.forgeflow ./cmd/mobile
+task build:available
+task build:desktop:windows:amd64
+task build:desktop:windows:arm64
+task build:desktop:macos:amd64
+task build:desktop:macos:arm64
+task build:desktop:linux:amd64
+task build:desktop:linux:arm64
 ```
 
 Android packaging requires the Android SDK/NDK. iOS packaging requires macOS
-and Xcode. Desktop cross-packaging follows Gio's platform toolchain
-requirements.
+and Xcode. `task run:ios` builds the correct simulator architecture, signs,
+installs, and launches the application. Until the Android SDK/NDK is installed,
+`task doctor:android` and `task run:android` preserve the configured target and
+report the exact missing toolchain instead of silently omitting Android.
 
 The module path remains `goforge.dev/cadence-taskboard` so existing release
 examples continue to resolve; ForgeFlow is the application identity.

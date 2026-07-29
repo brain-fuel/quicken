@@ -26,3 +26,24 @@ jobs:
           fi
       - name: test
         run: go test -race ./...
+
+  modules:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        module: [build, mobile, native, desktop, tui]
+    defaults:
+      run:
+        working-directory: ${{ matrix.module }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+      - name: generate check
+        run: go tool goplus gen -check .
+      - name: test
+        run: go test -race ./...
+      - name: vet
+        run: go vet ./...

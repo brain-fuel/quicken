@@ -1,0 +1,24 @@
+version: 1
+
+application:
+  name: ForgeFlow
+  identifier: dev.goforge.forgeflow
+  version: 0.1.0
+  build: 1
+
+commands:
+  web: ./cmd/wasm
+  server: ./cmd/server
+  desktop: ./cmd/desktop
+  mobile: ./cmd/mobile
+  tui: ./cmd/tui
+
+targets:
+  web:
+    output: web
+    loader: ../../browser/client/cadence-loader.js
+  ios:
+    minimum_version: "13.0"
+  android:
+    minimum_sdk: 26
+    target_sdk: 36

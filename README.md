@@ -1,9 +1,33 @@
 # quicken
 
-`goforge.dev/quicken/web` is the HTTP, DOM, and server-state interpreter for Cadence
-programs. It provides full-page and island SSR, versioned hydration manifests,
-typed remote commands, and authoritative live sessions over WebSocket with
-long-poll fallback.
+Quicken is the Web, TUI, desktop, and mobile UI family for Cadence programs.
+Applications share an Elm-style model, message algebra, update function,
+effects, and semantic view while target interpreters preserve native platform
+idioms.
+
+## Cross-platform builds
+
+`goforge.dev/quicken/build` owns the versioned application manifest and target
+toolchain boundary. GoForge Task supplies the uniform command surface:
+
+```sh
+task doctor
+task build:web
+task build:desktop
+task run:ios
+task run:android
+```
+
+The iOS simulator path distinguishes simulator `arm64` from device `arm64` and
+does not invoke `gogio`. Android remains explicitly configured and reports
+missing SDK/NDK tools until the Android toolchain is installed.
+
+## Quicken Web
+
+`goforge.dev/quicken/web` is the HTTP, DOM, and server-state interpreter for
+Cadence programs. It provides full-page and island SSR, versioned hydration
+manifests, typed remote commands, and authoritative live sessions over
+WebSocket with long-poll fallback.
 
 ## Isomorphic programs
 
