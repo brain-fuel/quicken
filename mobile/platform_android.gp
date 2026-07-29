@@ -2,4 +2,4 @@
 
 package mobile
 
-func platform() Platform { return PlatformAndroid() }
+func platform() Platform { return androidPlatform() }

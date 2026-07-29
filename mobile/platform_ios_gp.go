@@ -5,4 +5,4 @@
 
 package mobile
 
-func platform() Platform { return PlatformIOS() }
+func platform() Platform { return iosPlatform() }
