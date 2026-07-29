@@ -1,7 +1,7 @@
 version: '3'
 
 vars:
-  QUICKEN_BUILD: go run goforge.dev/quicken/build/cmd/quicken-build@v0.1.0
+  QUICKEN_BUILD: go run goforge.dev/quicken/build/cmd/quicken-build@v0.2.0
 
 tasks:
   default:
@@ -69,6 +69,10 @@ tasks:
     cmds:
       - '{{.QUICKEN_BUILD}} build ios-simulator'
 
+  build:ios:device:
+    cmds:
+      - '{{.QUICKEN_BUILD}} build ios-device'
+
   build:android:
     cmds:
       - '{{.QUICKEN_BUILD}} build android-emulator'
@@ -96,6 +100,10 @@ tasks:
   run:ios:
     cmds:
       - '{{.QUICKEN_BUILD}} run ios-simulator'
+
+  run:ios:device:
+    cmds:
+      - '{{.QUICKEN_BUILD}} -device {{.DEVICE}} run ios-device'
 
   run:android:
     cmds:

@@ -16,4 +16,20 @@ Silicon simulator `arm64` from device `arm64`. It does not invoke `gogio`.
 Android is represented in the same target model and currently reports precise
 SDK/NDK setup diagnostics until native APK packaging is enabled.
 
+Version `v0.2.0` adds an independent `ios-device` path and explicit desktop
+cross-toolchain configuration:
+
+```yaml
+targets:
+  ios:
+    minimum_version: "13.0"
+    signing_identity: "Apple Development: Example"
+    provisioning_profile: ./profiles/example.mobileprovision
+  desktop:
+    toolchains:
+      windows-amd64:
+        cc: x86_64-w64-mingw32-gcc
+        cxx: x86_64-w64-mingw32-g++
+```
+
 MIT, Copyright (c) 2026 Goforge.

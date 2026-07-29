@@ -23,12 +23,23 @@ type Commands struct {
 }
 
 type IOS struct {
-	MinimumVersion string `yaml:"minimum_version"`
+	MinimumVersion     string `yaml:"minimum_version"`
+	SigningIdentity    string `yaml:"signing_identity"`
+	ProvisioningProfile string `yaml:"provisioning_profile"`
 }
 
 type Android struct {
 	MinimumSDK int `yaml:"minimum_sdk"`
 	TargetSDK  int `yaml:"target_sdk"`
+}
+
+type Toolchain struct {
+	CC  string `yaml:"cc"`
+	CXX string `yaml:"cxx"`
+}
+
+type Desktop struct {
+	Toolchains map[string]Toolchain `yaml:"toolchains"`
 }
 
 type Web struct {
@@ -40,6 +51,7 @@ type Targets struct {
 	IOS     IOS     `yaml:"ios"`
 	Android Android `yaml:"android"`
 	Web     Web     `yaml:"web"`
+	Desktop Desktop `yaml:"desktop"`
 }
 
 type Config struct {

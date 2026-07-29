@@ -49,6 +49,8 @@ func buildTarget(config Config, target string, options Options) error {
 		return goBuild(config.Commands.Desktop, filepath.Join(options.Dist, artifactName(config, "desktop")), nil)
 	case "ios-simulator":
 		return buildIOSSimulator(config, options)
+	case "ios-device":
+		return buildIOSDevice(config, options)
 	case "android-emulator", "android-device":
 		return androidUnavailable(config)
 	default:
@@ -79,6 +81,22 @@ func runTarget(config Config, target string, options Options) error {
 			return fmt.Errorf("install iOS simulator application: %w", err)
 		}
 		_, err := command("xcrun", "simctl", "launch", "booted", config.Application.Identifier)
+		return err
+	case "ios-device":
+		if options.Device == "" {
+			return fmt.Errorf("ios-device run requires -device with a devicectl device identifier")
+		}
+		if config.Targets.IOS.SigningIdentity == "" {
+			return fmt.Errorf("ios-device run requires targets.ios.signing_identity")
+		}
+		if err := buildIOSDevice(config, options); err != nil {
+			return err
+		}
+		app := filepath.Join(options.Dist, config.Application.Name+"-device.app")
+		if _, err := command("xcrun", "devicectl", "device", "install", "app", "--device", options.Device, app); err != nil {
+			return err
+		}
+		_, err := command("xcrun", "devicectl", "device", "process", "launch", "--device", options.Device, config.Application.Identifier)
 		return err
 	case "android", "android-emulator", "android-device":
 		return androidUnavailable(config)
@@ -136,9 +154,20 @@ func buildDesktopCross(config Config, target string, options Options) error {
 		suffix = ".exe"
 	}
 	name := fmt.Sprintf("%s-%s-%s%s", strings.ToLower(config.Application.Name), goos, goarch, suffix)
-	env := map[string]string{"GOOS": goos, "GOARCH": goarch}
-	if goos != runtime.GOOS {
-		env["CGO_ENABLED"] = "0"
+	env := map[string]string{"GOOS": goos, "GOARCH": goarch, "CGO_ENABLED": "1"}
+	if goos != runtime.GOOS || goarch != runtime.GOARCH {
+		key := goos + "-" + goarch
+		toolchain, ok := config.Targets.Desktop.Toolchains[key]
+		if !ok || toolchain.CC == "" {
+			return fmt.Errorf("desktop target %s requires targets.desktop.toolchains.%s.cc", target, key)
+		}
+		if _, err := exec.LookPath(toolchain.CC); err != nil {
+			return fmt.Errorf("desktop target %s compiler %q is unavailable", target, toolchain.CC)
+		}
+		env["CC"] = toolchain.CC
+		if toolchain.CXX != "" {
+			env["CXX"] = toolchain.CXX
+		}
 	}
 	if err := goBuild(config.Commands.Desktop, filepath.Join(options.Dist, name), env); err != nil {
 		return fmt.Errorf("desktop target %s requires a compatible Gio C toolchain: %w", target, err)
@@ -203,6 +232,64 @@ func buildIOSSimulator(config Config, options Options) error {
 	return nil
 }
 
+func buildIOSDevice(config Config, options Options) error {
+	if runtime.GOOS != "darwin" {
+		return fmt.Errorf("ios-device requires macOS and Xcode")
+	}
+	if config.Commands.Mobile == "" {
+		return fmt.Errorf("commands.mobile is not configured")
+	}
+	sdk, err := command("xcrun", "--sdk", "iphoneos", "--show-sdk-path")
+	if err != nil {
+		return fmt.Errorf("iOS device SDK is unavailable: %w", err)
+	}
+	clang, err := command("xcrun", "--sdk", "iphoneos", "--find", "clang")
+	if err != nil {
+		return err
+	}
+	minimum := config.Targets.IOS.MinimumVersion
+	cflags := strings.Join([]string{
+		"-arch", "arm64",
+		"-isysroot", strings.TrimSpace(sdk),
+		"-miphoneos-version-min=" + minimum,
+		"-fobjc-arc",
+	}, " ")
+	app := filepath.Join(options.Dist, config.Application.Name+"-device.app")
+	if err := os.RemoveAll(app); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(app, 0o755); err != nil {
+		return err
+	}
+	executable := filepath.Join(app, config.Application.Name)
+	env := map[string]string{
+		"GOOS": "ios", "GOARCH": "arm64", "CGO_ENABLED": "1",
+		"CC": strings.TrimSpace(clang), "CXX": strings.TrimSpace(clang) + "++",
+		"CGO_CFLAGS": cflags, "CGO_CXXFLAGS": cflags,
+		"CGO_LDFLAGS": "-lresolv " + cflags,
+	}
+	if err := goBuild(config.Commands.Mobile, executable, env); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(app, "Info.plist"), []byte(iosDevicePlist(config)), 0o644); err != nil {
+		return err
+	}
+	if _, err := command("plutil", "-convert", "binary1", filepath.Join(app, "Info.plist")); err != nil {
+		return err
+	}
+	if config.Targets.IOS.ProvisioningProfile != "" {
+		if err := copyFile(filepath.Join(app, "embedded.mobileprovision"), config.Targets.IOS.ProvisioningProfile); err != nil {
+			return err
+		}
+	}
+	if config.Targets.IOS.SigningIdentity != "" {
+		if _, err := command("codesign", "--force", "--deep", "--sign", config.Targets.IOS.SigningIdentity, app); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func iosSimulatorPlist(config Config) string {
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -234,6 +321,14 @@ func iosSimulatorPlist(config Config) string {
 	)
 }
 
+func iosDevicePlist(config Config) string {
+	return strings.ReplaceAll(
+		iosSimulatorPlist(config),
+		"<string>iPhoneSimulator</string>",
+		"<string>iPhoneOS</string>",
+	)
+}
+
 func doctor(config Config, target string) error {
 	switch target {
 	case "all":
@@ -256,6 +351,12 @@ func doctor(config Config, target string) error {
 			return fmt.Errorf("requires macOS")
 		}
 		_, err := command("xcrun", "--sdk", "iphonesimulator", "--show-sdk-path")
+		return err
+	case "ios-device":
+		if runtime.GOOS != "darwin" {
+			return fmt.Errorf("requires macOS")
+		}
+		_, err := command("xcrun", "--sdk", "iphoneos", "--show-sdk-path")
 		return err
 	case "android", "android-emulator", "android-device":
 		return androidUnavailable(config)

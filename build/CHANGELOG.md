@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.2.0
+
+- Add separate `ios-device` compilation against `iphoneos`, optional
+  provisioning/signing, and `devicectl` installation and launch.
+- Configure non-host Gio desktop C/C++ compilers per operating system and
+  architecture instead of disabling CGO.
+- Diagnose missing cross compilers before invoking the Go build.
+
 ## v0.1.0
 
 - Add the versioned Quicken application build manifest.
