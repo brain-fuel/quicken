@@ -33,4 +33,5 @@ jobs:
           publish tui/v0.1.0 "Quicken TUI v0.1.0"
           publish desktop/v0.1.0 "Quicken Desktop v0.1.0"
           publish mobile/v0.1.0 "Quicken Mobile v0.1.0"
+          publish mobile/v0.1.1 "Quicken Mobile v0.1.1"
           publish v0.8.0 "Quicken Web v0.8.0"
