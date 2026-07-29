@@ -15,11 +15,11 @@ import (
 func main() {
 	_, err := desktop.Run(desktop.Application[taskboard.Model, taskboard.Msg]{
 		Logic: taskboard.Logic(taskboard.InitialModel(), taskboard.LocalSave),
-		View:  native.SELView(taskboard.SemanticView, native.DefaultPalette()),
+		View:  taskboard.DesktopView(),
 		Window: native.WindowOptions{
 			Title:  "ForgeFlow Operations",
-			Width:  unit.Dp(720),
-			Height: unit.Dp(540),
+			Width:  unit.Dp(1080),
+			Height: unit.Dp(720),
 		},
 	})
 	if err != nil {
