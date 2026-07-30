@@ -55,9 +55,9 @@ func WebProgram(id string, plan cadence.ValidatedPlan, save SaveEffect) quicken.
 }
 
 func HydratedProgram() quicken.Program[Bootstrap, Model, Msg] {
-	return WebProgram(HydratedID, cadence.Hydrated(cadence.ActivateLoad{}), RemoteSave)
+	return WebProgram(HydratedID, cadence.Hydrated(cadence.ActivateLoad()), RemoteSave)
 }
 
 func LiveProgram() quicken.Program[Bootstrap, Model, Msg] {
-	return WebProgram(LiveID, cadence.LiveServer(cadence.ActivateLoad{}), LocalSave)
+	return WebProgram(LiveID, cadence.LiveServer(cadence.ActivateLoad()), LocalSave)
 }

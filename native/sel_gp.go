@@ -27,7 +27,7 @@ func SELViewWithIdiom[State any, Msg any](
 ) View[State, Msg] {
 	return func(gtx layout.Context, state State, ui *UI[Msg]) layout.Dimensions {
 		root := render(state)
-		if err := sel.Validate(root, sel.TargetGio{}); err != nil {
+		if err := sel.Validate(root, sel.TargetGio()); err != nil {
 			return material.Body1(ui.Theme, "render error: "+err.Error()).Layout(gtx)
 		}
 		return elementWidget(root, ui, palette, idiom)(gtx)

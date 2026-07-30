@@ -13,7 +13,7 @@ import (
 )
 
 func RenderSEL[Msg any](root sel.Element[Msg], palette Palette) (string, error) {
-	if err := sel.Validate(root, sel.TargetTerminal{}); err != nil {
+	if err := sel.Validate(root, sel.TargetTerminal()); err != nil {
 		return "", err
 	}
 	return renderElement(root, palette)

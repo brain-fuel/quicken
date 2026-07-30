@@ -53,7 +53,7 @@ func Send[Msg any](message Msg) tea.Cmd {
 
 func Quit[Msg any]() program.Cmd[Msg] {
 	return program.Effect[Msg](
-		"", program.CapabilityTerminal{}, TerminalQuitEffect, nil,
+		"", program.CapabilityTerminal(), TerminalQuitEffect, nil,
 	)
 }
 

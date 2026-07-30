@@ -29,7 +29,7 @@ func Run[Model, Msg any](application Application[Model, Msg]) (Model, error) {
 		environment = func() Environment {
 			return Environment{
 				Platform:  CurrentPlatform(),
-				Lifecycle: LifecycleForeground{},
+				Lifecycle: LifecycleForeground(),
 			}
 		}
 	}

@@ -264,6 +264,16 @@ type Frame struct {
 	ctx  RenderContext
 }
 
+// Context returns the render context for this frame: the request scope the
+// shell is being rendered under.
+//
+// A Region reaches request scope through the RenderContext passed to
+// Skeleton and Render, but the Shell had no equivalent, so a shell could
+// only ever emit markup identical for every request. That rules out hosting
+// a dynamic route on one Page -- the shell around the slots could not vary
+// by path, query or header -- and forces a Page per request instead.
+func (f *Frame) Context() RenderContext { return f.ctx }
+
 // Head returns the markup for the document head: the shim script tag.
 func (f *Frame) Head() template.HTML {
 	return template.HTML(`<script src="` + ScriptPath + `"></script>`)

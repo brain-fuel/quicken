@@ -36,20 +36,21 @@ func Logic(initial Model, save SaveEffect) program.Logic[Model, Msg] {
 func Update(model Model, message Msg, save SaveEffect) program.Step[Model, Msg] {
 	command := program.None[Msg]()
 	switch __gp_m0 := any(message).(type) {
-	case IncidentDraftChanged:
-		value := __gp_m0.Value
+	case nil:
+		//goplus:pattern IncidentDraftChanged(value)
 		model.IncidentDraft = value
 		model.Error = ""
-	case SummaryDraftChanged:
-		value := __gp_m0.Value
+	case nil:
+		//goplus:pattern SummaryDraftChanged(value)
 		model.SummaryDraft = value
-	case LocationDraftChanged:
-		value := __gp_m0.Value
+	case nil:
+		//goplus:pattern LocationDraftChanged(value)
 		model.LocationDraft = value
-	case OwnerDraftChanged:
-		value := __gp_m0.Value
+	case nil:
+		//goplus:pattern OwnerDraftChanged(value)
 		model.OwnerDraft = value
-	case IncidentSubmitted:
+	case nil:
+		//goplus:pattern IncidentSubmitted()
 
 		title := strings.TrimSpace(model.IncidentDraft)
 		if title == "" {
@@ -72,13 +73,12 @@ func Update(model Model, message Msg, save SaveEffect) program.Step[Model, Msg] 
 			model = dirty(model)
 			command = save(model)
 		}
-	case IncidentSelected:
-		id := __gp_m0.Id
+	case nil:
+		//goplus:pattern IncidentSelected(id)
 		model.SelectedID = id
 		model.Error = ""
-	case SeverityChanged:
-		id := __gp_m0.Id
-		severity := __gp_m0.Severity
+	case nil:
+		//goplus:pattern SeverityChanged(id, severity)
 
 		model.Incidents = updateIncident(model.Incidents, id, func(incident Incident) Incident {
 			incident.Severity = severity
@@ -86,8 +86,8 @@ func Update(model Model, message Msg, save SaveEffect) program.Step[Model, Msg] 
 		})
 		model = dirty(model)
 		command = save(model)
-	case StatusAdvanced:
-		id := __gp_m0.Id
+	case nil:
+		//goplus:pattern StatusAdvanced(id)
 
 		model.Incidents = updateIncident(model.Incidents, id, func(incident Incident) Incident {
 			incident.Status = nextStatus(incident.Status)
@@ -95,10 +95,11 @@ func Update(model Model, message Msg, save SaveEffect) program.Step[Model, Msg] 
 		})
 		model = dirty(model)
 		command = save(model)
-	case TaskDraftChanged:
-		value := __gp_m0.Value
+	case nil:
+		//goplus:pattern TaskDraftChanged(value)
 		model.TaskDraft = value
-	case TaskAdded:
+	case nil:
+		//goplus:pattern TaskAdded()
 
 		title := strings.TrimSpace(model.TaskDraft)
 		if title == "" || model.SelectedID == 0 {
@@ -114,8 +115,8 @@ func Update(model Model, message Msg, save SaveEffect) program.Step[Model, Msg] 
 			model = dirty(model)
 			command = save(model)
 		}
-	case TaskToggled:
-		taskID := __gp_m0.TaskID
+	case nil:
+		//goplus:pattern TaskToggled(taskID)
 
 		model.Incidents = updateIncident(model.Incidents, model.SelectedID, func(incident Incident) Incident {
 			tasks := append([]Task(nil), incident.Tasks...)
@@ -129,10 +130,11 @@ func Update(model Model, message Msg, save SaveEffect) program.Step[Model, Msg] 
 		})
 		model = dirty(model)
 		command = save(model)
-	case NoteDraftChanged:
-		value := __gp_m0.Value
+	case nil:
+		//goplus:pattern NoteDraftChanged(value)
 		model.NoteDraft = value
-	case NoteAdded:
+	case nil:
+		//goplus:pattern NoteAdded()
 
 		body := strings.TrimSpace(model.NoteDraft)
 		if body == "" || model.SelectedID == 0 {
@@ -145,83 +147,84 @@ func Update(model Model, message Msg, save SaveEffect) program.Step[Model, Msg] 
 			model = dirty(model)
 			command = save(model)
 		}
-	case SearchChanged:
-		value := __gp_m0.Value
+	case nil:
+		//goplus:pattern SearchChanged(value)
 		model.Query = value
-	case FilterRequested:
-		filter := __gp_m0.Filter
+	case nil:
+		//goplus:pattern FilterRequested(filter)
 		model.Filter = filter
-	case ConnectivityChanged:
-		online := __gp_m0.Online
+	case nil:
+		//goplus:pattern ConnectivityChanged(online)
 
 		model.Online = online
 		if online {
-			model.Sync = SyncPending{}
+			model.Sync = SyncPending()
 		} else {
 			model.Error = "Offline: changes remain queued on this device."
 		}
-	case SyncRequested:
+	case nil:
+		//goplus:pattern SyncRequested()
 
 		if !model.Online {
 			model.Error = "Cannot synchronize while offline."
 		} else {
-			model.Sync = SyncRunning{}
+			model.Sync = SyncRunning()
 			model.Saving = true
 			command = save(model)
 		}
-	case SaveSucceeded:
-		incidents := __gp_m0.Incidents
+	case nil:
+		//goplus:pattern SaveSucceeded(incidents)
 
 		model.Incidents = cloneIncidents(incidents)
 		model.Saving = false
-		model.Sync = SyncIdle{}
+		model.Sync = SyncIdle()
 		model.Error = ""
-	case SaveFailed:
-		message := __gp_m0.Message
+	case nil:
+		//goplus:pattern SaveFailed(message)
 
 		model.Saving = false
-		model.Sync = SyncPending{}
+		model.Sync = SyncPending()
 		model.Error = message
-	case ConflictDetected:
-		conflict := __gp_m0.Conflict
+	case nil:
+		//goplus:pattern ConflictDetected(conflict)
 
 		model.Saving = false
-		model.Sync = SyncConflicted{Conflict: conflict}
+		model.Sync = SyncConflicted(conflict)
 		model.Error = "A remote edit conflicts with this device."
-	case KeepLocalRequested:
+	case nil:
+		//goplus:pattern KeepLocalRequested()
 
 		conflict, ok := syncConflict(model.Sync)
 		if ok {
 			model.Incidents = replaceIncident(model.Incidents, conflict.Local)
-			model.Sync = SyncPending{}
+			model.Sync = SyncPending()
 			model = dirty(model)
 			command = save(model)
 		}
-	case AcceptRemoteRequested:
+	case nil:
+		//goplus:pattern AcceptRemoteRequested()
 
 		conflict, ok := syncConflict(model.Sync)
 		if ok {
 			model.Incidents = replaceIncident(model.Incidents, conflict.Remote)
-			model.Sync = SyncIdle{}
+			model.Sync = SyncIdle()
 			model.Saving = false
 			model.Error = ""
 		}
-	default:
-		panic("goplus: impossible enum value in match")
 	}
 	return program.Step[Model, Msg]{Model: model, Command: command}
 }
 
 func LocalSave(model Model) program.Cmd[Msg] {
-	return program.After(75*time.Millisecond, program.Emit[Msg](SaveSucceeded{Incidents: cloneIncidents(model.Incidents)}))
+	return program.After(75*time.Millisecond, program.Emit[Msg](SaveSucceeded(cloneIncidents(model.Incidents))))
 }
 
 func RemoteSave(model Model) program.Cmd[Msg] {
 	requestID := fmt.Sprintf("save-%d", model.MutationRevision)
 	return browser.MustRemote(
 		requestID, "forgeflow.save", SaveRequest{Incidents: cloneIncidents(model.Incidents)},
-		func(response SaveResponse) Msg { return SaveSucceeded{Incidents: cloneIncidents(response.Incidents)} },
-		func(failure browser.PublicError) Msg { return SaveFailed{Message: failure.Message} },
+		func(response SaveResponse) Msg { return SaveSucceeded(cloneIncidents(response.Incidents)) },
+		func(failure browser.PublicError) Msg { return SaveFailed(failure.Message) },
 	)
 }
 
@@ -249,9 +252,9 @@ func dirty(model Model) Model {
 	model.Saving = true
 	model.Error = ""
 	if model.Online {
-		model.Sync = SyncRunning{}
+		model.Sync = SyncRunning()
 	} else {
-		model.Sync = SyncPending{}
+		model.Sync = SyncPending()
 	}
 	return model
 }

@@ -5,4 +5,4 @@
 
 package mobile
 
-func platform() Platform { return PlatformUnknown{} }
+func platform() Platform { return PlatformUnknown() }

@@ -81,7 +81,7 @@ func desktopHeader(gtx layout.Context, model Model, ui *native.UI[Msg]) layout.D
 			}),
 			layout.Rigid(layout.Spacer{Width: unit.Dp(12)}.Layout),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return desktopAction(gtx, ui, "desktop-sync", "SYNC", SyncRequested{}, desktopTeal)
+				return desktopAction(gtx, ui, "desktop-sync", "SYNC", SyncRequested(), desktopTeal)
 			}),
 		)
 	})
@@ -129,18 +129,18 @@ func desktopIncidentRail(
 				layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return desktopEditor(gtx, ui, "desktop-search", model.Query, "Search title, owner, location", func(value string) Msg {
-						return SearchChanged{Value: value}
+						return SearchChanged(value)
 					}, desktopCard)
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-							return desktopAction(gtx, ui, "desktop-all", "ALL", FilterRequested{Filter: FilterAll{}}, desktopTeal)
+							return desktopAction(gtx, ui, "desktop-all", "ALL", FilterRequested(FilterAll()), desktopTeal)
 						}),
 						layout.Rigid(layout.Spacer{Width: unit.Dp(5)}.Layout),
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-							return desktopAction(gtx, ui, "desktop-critical", "CRITICAL", FilterRequested{Filter: FilterCritical{}}, desktopCoral)
+							return desktopAction(gtx, ui, "desktop-critical", "CRITICAL", FilterRequested(FilterCritical()), desktopCoral)
 						}),
 					)
 				}),
@@ -168,7 +168,7 @@ func desktopIncidentItem(gtx layout.Context, ui *native.UI[Msg], incident Incide
 				layout.Rigid(layout.Spacer{Height: unit.Dp(4)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					gtx.Constraints.Min.X = gtx.Constraints.Max.X
-					return desktopAction(gtx, ui, fmt.Sprintf("desktop-incident-%d", incident.ID), incident.Title, IncidentSelected{Id: incident.ID}, background)
+					return desktopAction(gtx, ui, fmt.Sprintf("desktop-incident-%d", incident.ID), incident.Title, IncidentSelected(incident.ID), background)
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return desktopTextLabel(gtx, ui, incident.Location+"  ·  "+incident.Owner, desktopMuted, unit.Sp(12))
@@ -196,7 +196,7 @@ func desktopDetail(gtx layout.Context, model Model, ui *native.UI[Msg], list *la
 					label = "✓  " + current.Title
 					tone = desktopMuted
 				}
-				return desktopAction(gtx, ui, fmt.Sprintf("desktop-task-%d", current.ID), label, TaskToggled{TaskID: current.ID}, tone)
+				return desktopAction(gtx, ui, fmt.Sprintf("desktop-task-%d", current.ID), label, TaskToggled(current.ID), tone)
 			})
 		}
 		widgets = append(widgets,
@@ -204,12 +204,12 @@ func desktopDetail(gtx layout.Context, model Model, ui *native.UI[Msg], list *la
 				return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 						return desktopEditor(gtx, ui, "desktop-task-draft", model.TaskDraft, "Add response task", func(value string) Msg {
-							return TaskDraftChanged{Value: value}
+							return TaskDraftChanged(value)
 						}, desktopCard)
 					}),
 					layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return desktopAction(gtx, ui, "desktop-add-task", "ADD TASK", TaskAdded{}, desktopTeal)
+						return desktopAction(gtx, ui, "desktop-add-task", "ADD TASK", TaskAdded(), desktopTeal)
 					}),
 				)
 			},
@@ -227,12 +227,12 @@ func desktopDetail(gtx layout.Context, model Model, ui *native.UI[Msg], list *la
 			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 					return desktopEditor(gtx, ui, "desktop-note-draft", model.NoteDraft, "Record an operational note", func(value string) Msg {
-						return NoteDraftChanged{Value: value}
+						return NoteDraftChanged(value)
 					}, desktopCard)
 				}),
 				layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return desktopAction(gtx, ui, "desktop-add-note", "ADD NOTE", NoteAdded{}, desktopInk)
+					return desktopAction(gtx, ui, "desktop-add-note", "ADD NOTE", NoteAdded(), desktopInk)
 				}),
 			)
 		})
@@ -283,19 +283,19 @@ func desktopIncidentHero(gtx layout.Context, model Model, ui *native.UI[Msg], in
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return desktopAction(gtx, ui, "desktop-severity-low", "LOW", SeverityChanged{Id: incident.ID, Severity: SeverityLow}, desktopMuted)
+						return desktopAction(gtx, ui, "desktop-severity-low", "LOW", SeverityChanged(incident.ID, SeverityLow), desktopMuted)
 					}),
 					layout.Rigid(layout.Spacer{Width: unit.Dp(6)}.Layout),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return desktopAction(gtx, ui, "desktop-severity-high", "HIGH", SeverityChanged{Id: incident.ID, Severity: SeverityHigh}, desktopAmber)
+						return desktopAction(gtx, ui, "desktop-severity-high", "HIGH", SeverityChanged(incident.ID, SeverityHigh), desktopAmber)
 					}),
 					layout.Rigid(layout.Spacer{Width: unit.Dp(6)}.Layout),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return desktopAction(gtx, ui, "desktop-severity-critical", "CRITICAL", SeverityChanged{Id: incident.ID, Severity: SeverityCritical}, desktopCoral)
+						return desktopAction(gtx, ui, "desktop-severity-critical", "CRITICAL", SeverityChanged(incident.ID, SeverityCritical), desktopCoral)
 					}),
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{Size: gtx.Constraints.Min} }),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return desktopAction(gtx, ui, "desktop-advance", "ADVANCE STATUS →", StatusAdvanced{Id: incident.ID}, desktopTeal)
+						return desktopAction(gtx, ui, "desktop-advance", "ADVANCE STATUS →", StatusAdvanced(incident.ID), desktopTeal)
 					}),
 				)
 			}),
@@ -307,25 +307,25 @@ func desktopIncidentComposer(gtx layout.Context, model Model, ui *native.UI[Msg]
 	return desktopSurface(gtx, desktopCard, 12, unit.Dp(16), func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return desktopEditor(gtx, ui, "desktop-new-title", model.IncidentDraft, "Incident title", func(value string) Msg { return IncidentDraftChanged{Value: value} }, desktopPaper)
+				return desktopEditor(gtx, ui, "desktop-new-title", model.IncidentDraft, "Incident title", func(value string) Msg { return IncidentDraftChanged(value) }, desktopPaper)
 			}),
 			layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return desktopEditor(gtx, ui, "desktop-new-summary", model.SummaryDraft, "Situation summary", func(value string) Msg { return SummaryDraftChanged{Value: value} }, desktopPaper)
+				return desktopEditor(gtx, ui, "desktop-new-summary", model.SummaryDraft, "Situation summary", func(value string) Msg { return SummaryDraftChanged(value) }, desktopPaper)
 			}),
 			layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-						return desktopEditor(gtx, ui, "desktop-new-location", model.LocationDraft, "Location", func(value string) Msg { return LocationDraftChanged{Value: value} }, desktopPaper)
+						return desktopEditor(gtx, ui, "desktop-new-location", model.LocationDraft, "Location", func(value string) Msg { return LocationDraftChanged(value) }, desktopPaper)
 					}),
 					layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-						return desktopEditor(gtx, ui, "desktop-new-owner", model.OwnerDraft, "Owner", func(value string) Msg { return OwnerDraftChanged{Value: value} }, desktopPaper)
+						return desktopEditor(gtx, ui, "desktop-new-owner", model.OwnerDraft, "Owner", func(value string) Msg { return OwnerDraftChanged(value) }, desktopPaper)
 					}),
 					layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return desktopAction(gtx, ui, "desktop-open", "OPEN INCIDENT", IncidentSubmitted{}, desktopCoral)
+						return desktopAction(gtx, ui, "desktop-open", "OPEN INCIDENT", IncidentSubmitted(), desktopCoral)
 					}),
 				)
 			}),

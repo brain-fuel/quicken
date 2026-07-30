@@ -353,5 +353,5 @@ func CurrentPlatform() Platform { return platform() }
 
 // Keep enum construction in the untagged unit where the Go+ generator can
 // resolve the complete variant algebra.
-func iosPlatform() Platform     { return PlatformIOS{} }
-func androidPlatform() Platform { return PlatformAndroid{} }
+func iosPlatform() Platform     { return PlatformIOS() }
+func androidPlatform() Platform { return PlatformAndroid() }

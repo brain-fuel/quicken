@@ -34,27 +34,27 @@ func TestModelCodecRoundTrip(t *testing.T) {
 
 func TestMessageCodecRoundTrip(t *testing.T) {
 	messages := []Msg{
-		IncidentDraftChanged{Value: "network outage"},
-		SummaryDraftChanged{Value: "packet loss"},
-		LocationDraftChanged{Value: "us-west"},
-		OwnerDraftChanged{Value: "Maya"},
-		IncidentSubmitted{},
-		IncidentSelected{Id: 42},
-		SeverityChanged{Id: 42, Severity: SeverityCritical},
-		StatusAdvanced{Id: 42},
-		TaskDraftChanged{Value: "drain traffic"},
-		TaskAdded{},
-		TaskToggled{TaskID: 7},
-		NoteDraftChanged{Value: "mitigation started"},
-		NoteAdded{},
-		SearchChanged{Value: "outage"},
-		FilterRequested{Filter: FilterCritical{}},
-		ConnectivityChanged{Online: false},
-		SyncRequested{},
-		SaveSucceeded{Incidents: InitialModel().Incidents},
-		SaveFailed{Message: "network unavailable"},
-		KeepLocalRequested{},
-		AcceptRemoteRequested{},
+		IncidentDraftChanged("network outage"),
+		SummaryDraftChanged("packet loss"),
+		LocationDraftChanged("us-west"),
+		OwnerDraftChanged("Maya"),
+		IncidentSubmitted(),
+		IncidentSelected(42),
+		SeverityChanged(42, SeverityCritical),
+		StatusAdvanced(42),
+		TaskDraftChanged("drain traffic"),
+		TaskAdded(),
+		TaskToggled(7),
+		NoteDraftChanged("mitigation started"),
+		NoteAdded(),
+		SearchChanged("outage"),
+		FilterRequested(FilterCritical()),
+		ConnectivityChanged(false),
+		SyncRequested(),
+		SaveSucceeded(InitialModel().Incidents),
+		SaveFailed("network unavailable"),
+		KeepLocalRequested(),
+		AcceptRemoteRequested(),
 	}
 	codec := MessageCodec()
 	for _, message := range messages {
@@ -75,14 +75,14 @@ func TestMessageCodecRoundTrip(t *testing.T) {
 func TestVisibleIncidentsObeysSearchAndFilter(t *testing.T) {
 	model := InitialModel()
 	model.Query = "checkout"
-	model.Filter = FilterCritical{}
+	model.Filter = FilterCritical()
 	visible := VisibleIncidents(model)
 	if len(visible) != 1 || visible[0].Title != "Checkout API latency" {
 		t.Fatalf("critical checkout query = %#v", visible)
 	}
 
 	model.Query = ""
-	model.Filter = FilterResolved{}
+	model.Filter = FilterResolved()
 	if visible := VisibleIncidents(model); len(visible) != 0 {
 		t.Fatalf("resolved filter unexpectedly returned %#v", visible)
 	}
@@ -103,7 +103,7 @@ func TestOfflineMutationQueuesSynchronization(t *testing.T) {
 	model.Online = false
 	model.IncidentDraft = "Generator failure"
 
-	step := Update(model, IncidentSubmitted{}, LocalSave)
+	step := Update(model, IncidentSubmitted(), LocalSave)
 	if !isSyncPending(step.Model.Sync) {
 		t.Fatalf("offline mutation sync state = %#v", step.Model.Sync)
 	}
@@ -117,8 +117,8 @@ func TestOfflineMutationQueuesSynchronization(t *testing.T) {
 
 func TestConsecutiveMutationsHaveDistinctRevisions(t *testing.T) {
 	model := InitialModel()
-	first := Update(model, TaskToggled{TaskID: 1}, LocalSave)
-	second := Update(first.Model, StatusAdvanced{Id: 1}, LocalSave)
+	first := Update(model, TaskToggled(1), LocalSave)
+	second := Update(first.Model, StatusAdvanced(1), LocalSave)
 	if first.Model.MutationRevision == second.Model.MutationRevision {
 		t.Fatalf("consecutive mutations reused revision %d", first.Model.MutationRevision)
 	}
@@ -130,15 +130,15 @@ func TestConflictResolutionSelectsRequestedVersion(t *testing.T) {
 	remote := local
 	local.Title = "Local title"
 	remote.Title = "Remote title"
-	model.Sync = SyncConflicted{Conflict: Conflict{IncidentID: local.ID, Local: local, Remote: remote}}
+	model.Sync = SyncConflicted(Conflict{IncidentID: local.ID, Local: local, Remote: remote})
 
-	localStep := Update(model, KeepLocalRequested{}, LocalSave)
+	localStep := Update(model, KeepLocalRequested(), LocalSave)
 	localSelected, _ := selectedIncident(localStep.Model)
 	if localSelected.Title != local.Title {
 		t.Fatalf("keep local selected %q", localSelected.Title)
 	}
 
-	remoteStep := Update(model, AcceptRemoteRequested{}, LocalSave)
+	remoteStep := Update(model, AcceptRemoteRequested(), LocalSave)
 	remoteSelected, _ := selectedIncident(remoteStep.Model)
 	if remoteSelected.Title != remote.Title {
 		t.Fatalf("accept remote selected %q", remoteSelected.Title)

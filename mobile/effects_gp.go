@@ -29,7 +29,7 @@ type HapticRequest struct {
 func RequestPermission[Msg any](permission Permission) program.Cmd[Msg] {
 	return program.Effect[Msg](
 		"mobile.permission",
-		program.CapabilityGUI{},
+		program.CapabilityGUI(),
 		EffectPermission,
 		PermissionRequest{Permission: permission},
 	)
@@ -38,7 +38,7 @@ func RequestPermission[Msg any](permission Permission) program.Cmd[Msg] {
 func Share[Msg any](request ShareRequest) program.Cmd[Msg] {
 	return program.Effect[Msg](
 		"mobile.share",
-		program.CapabilityGUI{},
+		program.CapabilityGUI(),
 		EffectShare,
 		request,
 	)
@@ -47,7 +47,7 @@ func Share[Msg any](request ShareRequest) program.Cmd[Msg] {
 func Haptic[Msg any](kind string) program.Cmd[Msg] {
 	return program.Effect[Msg](
 		"mobile.haptic",
-		program.CapabilityGUI{},
+		program.CapabilityGUI(),
 		EffectHaptic,
 		HapticRequest{Kind: kind},
 	)

@@ -19,8 +19,8 @@ func BrowserView(model Model) browser.Node[Msg] {
 			browser.Element[Msg]("button", browser.Text[Msg](
 				fmt.Sprintf("%s · %s · %s", current.Severity, current.Status, current.Title),
 			)).WithAttribute("type", "button").On(
-				fmt.Sprintf("select-%d", current.ID), browser.EventClick{},
-				func(browser.EventData) Msg { return IncidentSelected{Id: current.ID} },
+				fmt.Sprintf("select-%d", current.ID), browser.EventClick(),
+				func(browser.EventData) Msg { return IncidentSelected(current.ID) },
 			),
 			browser.Element[Msg]("small", browser.Text[Msg](current.Location+" · owner "+current.Owner)),
 		).WithKey(fmt.Sprintf("incident-%d", current.ID)))
@@ -33,8 +33,8 @@ func BrowserView(model Model) browser.Node[Msg] {
 			tasks = append(tasks, browser.Element[Msg]("li",
 				browser.Element[Msg]("button", browser.Text[Msg](taskLabel(current))).
 					WithAttribute("type", "button").
-					On(fmt.Sprintf("task-%d", current.ID), browser.EventClick{},
-						func(browser.EventData) Msg { return TaskToggled{TaskID: current.ID} }),
+					On(fmt.Sprintf("task-%d", current.ID), browser.EventClick(),
+						func(browser.EventData) Msg { return TaskToggled(current.ID) }),
 			))
 		}
 		events := make([]browser.Node[Msg], 0, len(incident.Timeline))
@@ -44,18 +44,18 @@ func BrowserView(model Model) browser.Node[Msg] {
 		detail = browser.Element[Msg]("section",
 			browser.Element[Msg]("h2", browser.Text[Msg](incident.Title)),
 			browser.Element[Msg]("p", browser.Text[Msg](incident.Summary)),
-			button("severity-low", "Low", SeverityChanged{Id: incident.ID, Severity: SeverityLow}),
-			button("severity-high", "High", SeverityChanged{Id: incident.ID, Severity: SeverityHigh}),
-			button("severity-critical", "Critical", SeverityChanged{Id: incident.ID, Severity: SeverityCritical}),
-			button("advance-status", "Advance status", StatusAdvanced{Id: incident.ID}),
+			button("severity-low", "Low", SeverityChanged(incident.ID, SeverityLow)),
+			button("severity-high", "High", SeverityChanged(incident.ID, SeverityHigh)),
+			button("severity-critical", "Critical", SeverityChanged(incident.ID, SeverityCritical)),
+			button("advance-status", "Advance status", StatusAdvanced(incident.ID)),
 			browser.Element[Msg]("h3", browser.Text[Msg]("Response tasks")),
 			browser.Element[Msg]("ul", tasks...),
-			textInput("task-draft", model.TaskDraft, "New response task", func(value string) Msg { return TaskDraftChanged{Value: value} }),
-			button("task-add", "Add task", TaskAdded{}),
+			textInput("task-draft", model.TaskDraft, "New response task", func(value string) Msg { return TaskDraftChanged(value) }),
+			button("task-add", "Add task", TaskAdded()),
 			browser.Element[Msg]("h3", browser.Text[Msg]("Timeline")),
 			browser.Element[Msg]("ol", events...),
-			textInput("note-draft", model.NoteDraft, "Operational note", func(value string) Msg { return NoteDraftChanged{Value: value} }),
-			button("note-add", "Add note", NoteAdded{}),
+			textInput("note-draft", model.NoteDraft, "Operational note", func(value string) Msg { return NoteDraftChanged(value) }),
+			button("note-add", "Add note", NoteAdded()),
 		)
 	}
 	return browser.Element[Msg](
@@ -64,13 +64,13 @@ func BrowserView(model Model) browser.Node[Msg] {
 			browser.Element[Msg]("h1", browser.Text[Msg]("ForgeFlow Operations")),
 			browser.Element[Msg]("p", browser.Text[Msg](syncLabel(model))).WithAttribute("role", "status"),
 		),
-		textInput("search", model.Query, "Search incidents", func(value string) Msg { return SearchChanged{Value: value} }),
+		textInput("search", model.Query, "Search incidents", func(value string) Msg { return SearchChanged(value) }),
 		browser.Element[Msg]("nav",
-			button("filter-all", "All", FilterRequested{Filter: FilterAll{}}),
-			button("filter-active", "Active", FilterRequested{Filter: FilterActive{}}),
-			button("filter-critical", "Critical", FilterRequested{Filter: FilterCritical{}}),
-			button("filter-resolved", "Resolved", FilterRequested{Filter: FilterResolved{}}),
-			button("sync", "Sync now", SyncRequested{}),
+			button("filter-all", "All", FilterRequested(FilterAll())),
+			button("filter-active", "Active", FilterRequested(FilterActive())),
+			button("filter-critical", "Critical", FilterRequested(FilterCritical())),
+			button("filter-resolved", "Resolved", FilterRequested(FilterResolved())),
+			button("sync", "Sync now", SyncRequested()),
 		).WithAttribute("aria-label", "Incident filters"),
 		browser.Element[Msg]("section",
 			browser.Element[Msg]("aside", browser.Element[Msg]("h2", browser.Text[Msg]("Incidents")), browser.Element[Msg]("ul", cards...)),
@@ -78,11 +78,11 @@ func BrowserView(model Model) browser.Node[Msg] {
 		),
 		browser.Element[Msg]("section",
 			browser.Element[Msg]("h2", browser.Text[Msg]("Open an incident")),
-			textInput("incident-title", model.IncidentDraft, "Title", func(value string) Msg { return IncidentDraftChanged{Value: value} }),
-			textInput("incident-summary", model.SummaryDraft, "Summary", func(value string) Msg { return SummaryDraftChanged{Value: value} }),
-			textInput("incident-location", model.LocationDraft, "Location", func(value string) Msg { return LocationDraftChanged{Value: value} }),
-			textInput("incident-owner", model.OwnerDraft, "Owner", func(value string) Msg { return OwnerDraftChanged{Value: value} }),
-			button("incident-submit", "Open incident", IncidentSubmitted{}),
+			textInput("incident-title", model.IncidentDraft, "Title", func(value string) Msg { return IncidentDraftChanged(value) }),
+			textInput("incident-summary", model.SummaryDraft, "Summary", func(value string) Msg { return SummaryDraftChanged(value) }),
+			textInput("incident-location", model.LocationDraft, "Location", func(value string) Msg { return LocationDraftChanged(value) }),
+			textInput("incident-owner", model.OwnerDraft, "Owner", func(value string) Msg { return OwnerDraftChanged(value) }),
+			button("incident-submit", "Open incident", IncidentSubmitted()),
 		),
 		browser.Element[Msg]("p", browser.Text[Msg](model.Error)).WithAttribute("role", "alert"),
 	).WithKey("forgeflow").WithStyle(style.Default().WithPadding(style.All(1)))
@@ -91,13 +91,13 @@ func BrowserView(model Model) browser.Node[Msg] {
 func textInput(key, value, label string, onInput func(string) Msg) browser.Node[Msg] {
 	return browser.Element[Msg]("input").WithKey(key).WithAttribute("aria-label", label).
 		WithAttribute("placeholder", label).WithProperty("value", value).
-		On(key+"-input", browser.EventInput{}, func(event browser.EventData) Msg { return onInput(event.Value) })
+		On(key+"-input", browser.EventInput(), func(event browser.EventData) Msg { return onInput(event.Value) })
 }
 
 func button(key, label string, message Msg) browser.Node[Msg] {
 	return browser.Element[Msg]("button", browser.Text[Msg](label)).WithKey(key).
 		WithAttribute("type", "button").
-		On(key+"-click", browser.EventClick{}, func(browser.EventData) Msg { return message })
+		On(key+"-click", browser.EventClick(), func(browser.EventData) Msg { return message })
 }
 
 func taskLabel(task Task) string {

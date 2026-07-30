@@ -24,15 +24,16 @@ func SELView[Model any, Msg any](
 		environment Environment,
 	) layout.Dimensions {
 		idiom := native.AndroidIdiom()
-		switch any(environment.Platform).(type) {
-		case PlatformIOS:
+		switch __gp_m0 := any(environment.Platform).(type) {
+		case nil:
+			//goplus:pattern PlatformIOS()
 			idiom = native.IOSIdiom()
-		case PlatformAndroid:
+		case nil:
+			//goplus:pattern PlatformAndroid()
 			idiom = native.AndroidIdiom()
-		case PlatformUnknown:
+		case nil:
+			//goplus:pattern PlatformUnknown()
 			idiom = native.AndroidIdiom()
-		default:
-			panic("goplus: impossible enum value in match")
 		}
 		view := native.SELViewWithIdiom(render, palette, idiom)
 		inset := layout.Inset{

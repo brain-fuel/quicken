@@ -95,19 +95,19 @@ func Styled(
 			BorderNone: func() layout.Dimensions { return content(gtx) },
 			BorderSubtle: func() layout.Dimensions {
 				return widget.Border{
-					Color: ColorFor(cadencestyle.ColorMuted{}, palette),
+					Color: ColorFor(cadencestyle.ColorMuted(), palette),
 					Width: unit.Dp(1),
 				}.Layout(gtx, content)
 			},
 			BorderStrong: func() layout.Dimensions {
 				return widget.Border{
-					Color: ColorFor(cadencestyle.ColorPrimary{}, palette),
+					Color: ColorFor(cadencestyle.ColorPrimary(), palette),
 					Width: unit.Dp(2),
 				}.Layout(gtx, content)
 			},
 			BorderRounded: func() layout.Dimensions {
 				return widget.Border{
-					Color: ColorFor(cadencestyle.ColorPrimary{}, palette),
+					Color: ColorFor(cadencestyle.ColorPrimary(), palette),
 					Width: unit.Dp(1), CornerRadius: unit.Dp(6),
 				}.Layout(gtx, content)
 			},

@@ -540,7 +540,7 @@ func InitialModel() Model {
 				Timeline: []Activity{{ID: 2, At: "10:42", Kind: "update", Body: "Traffic shifted away from the degraded pool."}},
 			},
 		},
-		SelectedID: 1, Filter: FilterAll{}, Sync: SyncIdle{}, Online: true,
+		SelectedID: 1, Filter: FilterAll(), Sync: SyncIdle(), Online: true,
 		NextIncidentID: 3, NextTaskID: 4, NextActivityID: 3,
 	}
 }
@@ -595,69 +595,72 @@ func MessageCodec() program.Codec[Msg] {
 func encodeMessage(message Msg) ([]byte, error) {
 	var wire messageWire
 	switch __gp_m0 := any(message).(type) {
-	case IncidentDraftChanged:
-		value := __gp_m0.Value
+	case nil:
+		//goplus:pattern IncidentDraftChanged(value)
 		wire = messageWire{Type: "incident-draft", Value: value}
-	case SummaryDraftChanged:
-		value := __gp_m0.Value
+	case nil:
+		//goplus:pattern SummaryDraftChanged(value)
 		wire = messageWire{Type: "summary-draft", Value: value}
-	case LocationDraftChanged:
-		value := __gp_m0.Value
+	case nil:
+		//goplus:pattern LocationDraftChanged(value)
 		wire = messageWire{Type: "location-draft", Value: value}
-	case OwnerDraftChanged:
-		value := __gp_m0.Value
+	case nil:
+		//goplus:pattern OwnerDraftChanged(value)
 		wire = messageWire{Type: "owner-draft", Value: value}
-	case IncidentSubmitted:
+	case nil:
+		//goplus:pattern IncidentSubmitted()
 		wire = messageWire{Type: "incident-submitted"}
-	case IncidentSelected:
-		id := __gp_m0.Id
+	case nil:
+		//goplus:pattern IncidentSelected(id)
 		wire = messageWire{Type: "incident-selected", ID: id}
-	case SeverityChanged:
-		id := __gp_m0.Id
-		severity := __gp_m0.Severity
+	case nil:
+		//goplus:pattern SeverityChanged(id, severity)
 		wire = messageWire{Type: "severity-changed", ID: id, Severity: severity}
-	case StatusAdvanced:
-		id := __gp_m0.Id
+	case nil:
+		//goplus:pattern StatusAdvanced(id)
 		wire = messageWire{Type: "status-advanced", ID: id}
-	case TaskDraftChanged:
-		value := __gp_m0.Value
+	case nil:
+		//goplus:pattern TaskDraftChanged(value)
 		wire = messageWire{Type: "task-draft", Value: value}
-	case TaskAdded:
+	case nil:
+		//goplus:pattern TaskAdded()
 		wire = messageWire{Type: "task-added"}
-	case TaskToggled:
-		taskID := __gp_m0.TaskID
+	case nil:
+		//goplus:pattern TaskToggled(taskID)
 		wire = messageWire{Type: "task-toggled", TaskID: taskID}
-	case NoteDraftChanged:
-		value := __gp_m0.Value
+	case nil:
+		//goplus:pattern NoteDraftChanged(value)
 		wire = messageWire{Type: "note-draft", Value: value}
-	case NoteAdded:
+	case nil:
+		//goplus:pattern NoteAdded()
 		wire = messageWire{Type: "note-added"}
-	case SearchChanged:
-		value := __gp_m0.Value
+	case nil:
+		//goplus:pattern SearchChanged(value)
 		wire = messageWire{Type: "search-changed", Value: value}
-	case FilterRequested:
-		filter := __gp_m0.Filter
+	case nil:
+		//goplus:pattern FilterRequested(filter)
 		wire = messageWire{Type: "filter", Filter: filterName(filter)}
-	case ConnectivityChanged:
-		online := __gp_m0.Online
+	case nil:
+		//goplus:pattern ConnectivityChanged(online)
 		wire = messageWire{Type: "connectivity", Online: online}
-	case SyncRequested:
+	case nil:
+		//goplus:pattern SyncRequested()
 		wire = messageWire{Type: "sync-requested"}
-	case SaveSucceeded:
-		incidents := __gp_m0.Incidents
+	case nil:
+		//goplus:pattern SaveSucceeded(incidents)
 		wire = messageWire{Type: "save-succeeded", Incidents: cloneIncidents(incidents)}
-	case SaveFailed:
-		message := __gp_m0.Message
+	case nil:
+		//goplus:pattern SaveFailed(message)
 		wire = messageWire{Type: "save-failed", Message: message}
-	case ConflictDetected:
-		conflict := __gp_m0.Conflict
+	case nil:
+		//goplus:pattern ConflictDetected(conflict)
 		wire = messageWire{Type: "conflict", Conflict: &conflict}
-	case KeepLocalRequested:
+	case nil:
+		//goplus:pattern KeepLocalRequested()
 		wire = messageWire{Type: "keep-local"}
-	case AcceptRemoteRequested:
+	case nil:
+		//goplus:pattern AcceptRemoteRequested()
 		wire = messageWire{Type: "accept-remote"}
-	default:
-		panic("goplus: impossible enum value in match")
 	}
 	return json.Marshal(wire)
 }
@@ -669,56 +672,56 @@ func decodeMessage(data []byte) (Msg, error) {
 	}
 	switch wire.Type {
 	case "incident-draft":
-		return IncidentDraftChanged{Value: wire.Value}, nil
+		return IncidentDraftChanged(wire.Value), nil
 	case "summary-draft":
-		return SummaryDraftChanged{Value: wire.Value}, nil
+		return SummaryDraftChanged(wire.Value), nil
 	case "location-draft":
-		return LocationDraftChanged{Value: wire.Value}, nil
+		return LocationDraftChanged(wire.Value), nil
 	case "owner-draft":
-		return OwnerDraftChanged{Value: wire.Value}, nil
+		return OwnerDraftChanged(wire.Value), nil
 	case "incident-submitted":
-		return IncidentSubmitted{}, nil
+		return IncidentSubmitted(), nil
 	case "incident-selected":
-		return IncidentSelected{Id: wire.ID}, nil
+		return IncidentSelected(wire.ID), nil
 	case "severity-changed":
-		return SeverityChanged{Id: wire.ID, Severity: wire.Severity}, nil
+		return SeverityChanged(wire.ID, wire.Severity), nil
 	case "status-advanced":
-		return StatusAdvanced{Id: wire.ID}, nil
+		return StatusAdvanced(wire.ID), nil
 	case "task-draft":
-		return TaskDraftChanged{Value: wire.Value}, nil
+		return TaskDraftChanged(wire.Value), nil
 	case "task-added":
-		return TaskAdded{}, nil
+		return TaskAdded(), nil
 	case "task-toggled":
-		return TaskToggled{TaskID: wire.TaskID}, nil
+		return TaskToggled(wire.TaskID), nil
 	case "note-draft":
-		return NoteDraftChanged{Value: wire.Value}, nil
+		return NoteDraftChanged(wire.Value), nil
 	case "note-added":
-		return NoteAdded{}, nil
+		return NoteAdded(), nil
 	case "search-changed":
-		return SearchChanged{Value: wire.Value}, nil
+		return SearchChanged(wire.Value), nil
 	case "filter":
 		filter, err := parseFilter(wire.Filter)
 		if err != nil {
 			return nil, err
 		}
-		return FilterRequested{Filter: filter}, nil
+		return FilterRequested(filter), nil
 	case "connectivity":
-		return ConnectivityChanged{Online: wire.Online}, nil
+		return ConnectivityChanged(wire.Online), nil
 	case "sync-requested":
-		return SyncRequested{}, nil
+		return SyncRequested(), nil
 	case "save-succeeded":
-		return SaveSucceeded{Incidents: cloneIncidents(wire.Incidents)}, nil
+		return SaveSucceeded(cloneIncidents(wire.Incidents)), nil
 	case "save-failed":
-		return SaveFailed{Message: wire.Message}, nil
+		return SaveFailed(wire.Message), nil
 	case "conflict":
 		if wire.Conflict == nil {
 			return nil, fmt.Errorf("forgeflow: conflict payload missing")
 		}
-		return ConflictDetected{Conflict: *wire.Conflict}, nil
+		return ConflictDetected(*wire.Conflict), nil
 	case "keep-local":
-		return KeepLocalRequested{}, nil
+		return KeepLocalRequested(), nil
 	case "accept-remote":
-		return AcceptRemoteRequested{}, nil
+		return AcceptRemoteRequested(), nil
 	default:
 		return nil, fmt.Errorf("forgeflow: unknown message %q", wire.Type)
 	}
@@ -736,13 +739,13 @@ func filterName(filter Filter) string {
 func parseFilter(value string) (Filter, error) {
 	switch value {
 	case "", "all":
-		return FilterAll{}, nil
+		return FilterAll(), nil
 	case "active":
-		return FilterActive{}, nil
+		return FilterActive(), nil
 	case "critical":
-		return FilterCritical{}, nil
+		return FilterCritical(), nil
 	case "resolved":
-		return FilterResolved{}, nil
+		return FilterResolved(), nil
 	default:
 		return nil, fmt.Errorf("forgeflow: invalid filter %q", value)
 	}
@@ -799,16 +802,16 @@ func encodeSync(sync SyncState) (string, *Conflict) {
 func decodeSync(name string, conflict *Conflict) (SyncState, error) {
 	switch name {
 	case "", "idle":
-		return SyncIdle{}, nil
+		return SyncIdle(), nil
 	case "pending":
-		return SyncPending{}, nil
+		return SyncPending(), nil
 	case "running":
-		return SyncRunning{}, nil
+		return SyncRunning(), nil
 	case "conflicted":
 		if conflict == nil {
 			return nil, fmt.Errorf("forgeflow: sync conflict missing")
 		}
-		return SyncConflicted{Conflict: *conflict}, nil
+		return SyncConflicted(*conflict), nil
 	default:
 		return nil, fmt.Errorf("forgeflow: invalid sync state %q", name)
 	}

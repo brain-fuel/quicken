@@ -16,7 +16,7 @@ func SemanticView(model Model) sel.Element[Msg] {
 		current := incident
 		rows = append(rows, sel.Button[Msg](
 			fmt.Sprintf("[%s/%s] %s — %s", current.Severity, current.Status, current.Title, current.Owner),
-			IncidentSelected{Id: current.ID},
+			IncidentSelected(current.ID),
 		).WithKey(fmt.Sprintf("incident-%d", current.ID)))
 	}
 	body := sel.Status[Msg]("Select an incident.")
@@ -24,7 +24,7 @@ func SemanticView(model Model) sel.Element[Msg] {
 		tasks := make([]sel.Element[Msg], 0, len(incident.Tasks))
 		for _, task := range incident.Tasks {
 			current := task
-			tasks = append(tasks, sel.Checkbox[Msg](current.Done, current.Title, TaskToggled{TaskID: current.ID}).
+			tasks = append(tasks, sel.Checkbox[Msg](current.Done, current.Title, TaskToggled(current.ID)).
 				WithKey(fmt.Sprintf("task-%d", current.ID)))
 		}
 		events := make([]sel.Element[Msg], 0, len(incident.Timeline))
@@ -35,43 +35,43 @@ func SemanticView(model Model) sel.Element[Msg] {
 			sel.Heading[Msg](2, incident.Title),
 			sel.Status[Msg](incident.Summary+" · "+incident.Location+" · owner "+incident.Owner),
 			sel.Row[Msg](
-				sel.Button[Msg]("Low", SeverityChanged{Id: incident.ID, Severity: SeverityLow}),
-				sel.Button[Msg]("High", SeverityChanged{Id: incident.ID, Severity: SeverityHigh}),
-				sel.Button[Msg]("Critical", SeverityChanged{Id: incident.ID, Severity: SeverityCritical}),
-				sel.Button[Msg]("Advance status", StatusAdvanced{Id: incident.ID}),
+				sel.Button[Msg]("Low", SeverityChanged(incident.ID, SeverityLow)),
+				sel.Button[Msg]("High", SeverityChanged(incident.ID, SeverityHigh)),
+				sel.Button[Msg]("Critical", SeverityChanged(incident.ID, SeverityCritical)),
+				sel.Button[Msg]("Advance status", StatusAdvanced(incident.ID)),
 			),
 			sel.Heading[Msg](3, "Response tasks"),
 			sel.List[Msg](tasks...),
-			sel.TextInput[Msg](model.TaskDraft, "New response task", func(value string) Msg { return TaskDraftChanged{Value: value} }),
-			sel.Button[Msg]("Add task", TaskAdded{}),
+			sel.TextInput[Msg](model.TaskDraft, "New response task", func(value string) Msg { return TaskDraftChanged(value) }),
+			sel.Button[Msg]("Add task", TaskAdded()),
 			sel.Heading[Msg](3, "Timeline"),
 			sel.List[Msg](events...),
-			sel.TextInput[Msg](model.NoteDraft, "Add operational note", func(value string) Msg { return NoteDraftChanged{Value: value} }),
-			sel.Button[Msg]("Add note", NoteAdded{}),
+			sel.TextInput[Msg](model.NoteDraft, "Add operational note", func(value string) Msg { return NoteDraftChanged(value) }),
+			sel.Button[Msg]("Add note", NoteAdded()),
 		)
 	}
 	return sel.Column[Msg](
 		sel.Heading[Msg](1, "ForgeFlow Operations").WithStyle(
-			style.Default().WithForeground(style.ColorPrimary{}).WithEmphasis(style.EmphasisStrong{}),
+			style.Default().WithForeground(style.ColorPrimary()).WithEmphasis(style.EmphasisStrong()),
 		),
 		sel.Status[Msg](syncLabel(model)),
-		sel.TextInput[Msg](model.Query, "Search incidents", func(value string) Msg { return SearchChanged{Value: value} }),
+		sel.TextInput[Msg](model.Query, "Search incidents", func(value string) Msg { return SearchChanged(value) }),
 		sel.Row[Msg](
-			sel.Button[Msg]("All", FilterRequested{Filter: FilterAll{}}),
-			sel.Button[Msg]("Active", FilterRequested{Filter: FilterActive{}}),
-			sel.Button[Msg]("Critical", FilterRequested{Filter: FilterCritical{}}),
-			sel.Button[Msg]("Resolved", FilterRequested{Filter: FilterResolved{}}),
-			sel.Button[Msg]("Sync now", SyncRequested{}),
+			sel.Button[Msg]("All", FilterRequested(FilterAll())),
+			sel.Button[Msg]("Active", FilterRequested(FilterActive())),
+			sel.Button[Msg]("Critical", FilterRequested(FilterCritical())),
+			sel.Button[Msg]("Resolved", FilterRequested(FilterResolved())),
+			sel.Button[Msg]("Sync now", SyncRequested()),
 		),
 		sel.Row[Msg](sel.Column[Msg](sel.Heading[Msg](2, "Incidents"), sel.List[Msg](rows...)), body),
 		sel.Heading[Msg](2, "Open an incident"),
-		sel.TextInput[Msg](model.IncidentDraft, "Title", func(value string) Msg { return IncidentDraftChanged{Value: value} }),
-		sel.TextInput[Msg](model.SummaryDraft, "Summary", func(value string) Msg { return SummaryDraftChanged{Value: value} }),
-		sel.TextInput[Msg](model.LocationDraft, "Location", func(value string) Msg { return LocationDraftChanged{Value: value} }),
-		sel.TextInput[Msg](model.OwnerDraft, "Owner", func(value string) Msg { return OwnerDraftChanged{Value: value} }),
-		sel.Button[Msg]("Open incident", IncidentSubmitted{}),
+		sel.TextInput[Msg](model.IncidentDraft, "Title", func(value string) Msg { return IncidentDraftChanged(value) }),
+		sel.TextInput[Msg](model.SummaryDraft, "Summary", func(value string) Msg { return SummaryDraftChanged(value) }),
+		sel.TextInput[Msg](model.LocationDraft, "Location", func(value string) Msg { return LocationDraftChanged(value) }),
+		sel.TextInput[Msg](model.OwnerDraft, "Owner", func(value string) Msg { return OwnerDraftChanged(value) }),
+		sel.Button[Msg]("Open incident", IncidentSubmitted()),
 		conflictView(model),
-	).WithKey("forgeflow").WithStyle(style.Default().WithPadding(style.All(1)).WithBorder(style.BorderRounded{}))
+	).WithKey("forgeflow").WithStyle(style.Default().WithPadding(style.All(1)).WithBorder(style.BorderRounded()))
 }
 
 func conflictView(model Model) sel.Element[Msg] {
@@ -81,8 +81,8 @@ func conflictView(model Model) sel.Element[Msg] {
 	}
 	return sel.Row[Msg](
 		sel.Status[Msg]("Sync conflict: choose which incident version to retain."),
-		sel.Button[Msg]("Keep this device", KeepLocalRequested{}),
-		sel.Button[Msg]("Accept remote", AcceptRemoteRequested{}),
+		sel.Button[Msg]("Keep this device", KeepLocalRequested()),
+		sel.Button[Msg]("Accept remote", AcceptRemoteRequested()),
 	)
 }
 
