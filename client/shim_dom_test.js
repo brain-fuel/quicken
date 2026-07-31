@@ -285,4 +285,55 @@ function slotPending(id) {
   assert(!slotPending('e'), 'repeat reveal/hover after swap must stay a no-op, not throw');
 })();
 
+// Scenario 9: targetsFor resolves the region an event addresses. A control
+// inside a slot drives that slot; data-live-region names a target explicitly,
+// which is the only option for a control in the shell (a filter form or
+// toolbar) that has no enclosing slot; "*" addresses every live region.
+(function () {
+  all = [];
+  const ids = ['stats', 'verses', 'cards'];
+  const T = window.__quicken.targetsFor;
+
+  const loose = new El('button');
+  assert(T(loose, ids).length === 0, 'a control with no slot and no target addresses nothing');
+
+  const named = new El('button');
+  named.setAttribute('data-live-region', 'cards');
+  assert(T(named, ids).join() === 'cards', 'data-live-region should name one target');
+
+  const all_ = new El('button');
+  all_.setAttribute('data-live-region', '*');
+  assert(T(all_, ids).join() === 'stats,verses,cards', '"*" should address every live region');
+
+  const slot = new El('div');
+  slot.setAttribute('id', 'q-slot-verses');
+  const inner = new El('button');
+  slot.appendChild(inner);
+  assert(T(inner, ids).join() === 'verses', 'a control inside a slot drives that slot');
+})();
+
+// Scenario 10: serializeForm captures what the user actually typed. Every
+// field is an array so a checkbox group does not change JSON type between
+// one box ticked and several.
+(function () {
+  all = [];
+  const S = window.__quicken.serializeForm;
+  assert(JSON.stringify(S(null)) === '{}', 'a missing form serializes to {}');
+
+  const form = new El('form');
+  const rank = new El('input'); rank.name = 'rank-min'; rank.value = '20000';
+  const k1 = new El('input'); k1.name = 'kinds'; k1.type = 'checkbox'; k1.value = 'synonym'; k1.checked = true;
+  const k2 = new El('input'); k2.name = 'kinds'; k2.type = 'checkbox'; k2.value = 'antonym'; k2.checked = true;
+  const off = new El('input'); off.name = 'kinds'; off.type = 'checkbox'; off.value = 'antonym'; off.checked = false;
+  const anon = new El('input'); anon.value = 'ignored';
+  const btn = new El('input'); btn.name = 'go'; btn.type = 'submit'; btn.value = 'Apply';
+  form.elements = [rank, k1, k2, off, anon, btn];
+
+  const got = S(form);
+  assert(JSON.stringify(got['rank-min']) === '["20000"]', 'single values are still arrays');
+  assert(JSON.stringify(got.kinds) === '["synonym","antonym"]', 'only checked boxes, in order');
+  assert(got.go === undefined, 'submit buttons are not form state');
+  assert(Object.keys(got).length === 2, 'unnamed controls are skipped');
+})();
+
 console.log('quicken.js swap shim: all scenarios passed');

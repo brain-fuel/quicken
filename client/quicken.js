@@ -149,7 +149,54 @@
     return null;
   }
 
-  function wireLive(send) {
+  // serializeForm collects a form's successful controls into
+  // {name: [value, ...]}. Every field is an array, including single-valued
+  // ones: the shape then maps straight onto url.Values on the server, and a
+  // field that is sometimes one value and sometimes many (a checkbox group
+  // with one box ticked) does not change JSON type under the server's nose.
+  function serializeForm(form) {
+    var out = {};
+    if (!form || !form.elements) return out;
+    for (var i = 0; i < form.elements.length; i++) {
+      var el = form.elements[i];
+      if (!el.name || el.disabled) continue;
+      if ((el.type === 'checkbox' || el.type === 'radio') && !el.checked) continue;
+      if (el.type === 'submit' || el.type === 'button' || el.type === 'file') continue;
+      if (out[el.name] === undefined) out[el.name] = [];
+      out[el.name].push(el.value);
+    }
+    return out;
+  }
+
+  function formFor(node) {
+    var sel = node.getAttribute('data-live-form');
+    if (sel) return document.querySelector(sel);
+    if (node.form) return node.form;
+    var n = node;
+    while (n && n.tagName) {
+      if (n.tagName.toLowerCase() === 'form') return n;
+      n = n.parentNode;
+    }
+    return null;
+  }
+
+  // targetsFor resolves which live regions an event addresses.
+  //
+  // By default a control drives the region it sits inside, found by walking
+  // up to the enclosing slot. That is not always where the control lives: a
+  // filter form, toolbar or sidebar sits in the shell and drives content
+  // elsewhere, and such a control has no enclosing slot at all. data-live-region
+  // names the target explicitly, and "*" addresses every live region on the
+  // page -- the case where one control recomputes all of them.
+  function targetsFor(node, ids) {
+    var explicit = node.getAttribute('data-live-region');
+    if (explicit === '*') return ids || [];
+    if (explicit) return [explicit];
+    var slot = closestSlot(node);
+    return slot ? [slot] : [];
+  }
+
+  function wireLive(send, ids) {
     for (var i = 0; i < LIVE_EVENTS.length; i++) {
       (function (evName) {
         document.addEventListener(evName, function (e) {
@@ -157,15 +204,22 @@
           while (node && node.getAttribute) {
             var name = node.getAttribute('data-live-' + evName);
             if (name) {
-              var slot = closestSlot(node);
-              if (slot) {
-                var payload = node.getAttribute('data-live-payload');
-                send({
-                  type: 'event',
-                  region: slot,
-                  event: name,
-                  payload: payload ? JSON.parse(payload) : undefined
-                });
+              var targets = targetsFor(node, ids);
+              if (!targets.length) return;
+              var raw = node.getAttribute('data-live-payload');
+              var payload = raw ? JSON.parse(raw) : undefined;
+              // data-live-payload is a static attribute, so on its own a
+              // live event can never carry what the user typed. data-live-form
+              // serializes the form's current state alongside it.
+              if (node.getAttribute('data-live-form') !== null) {
+                payload = payload || {};
+                payload.form = serializeForm(formFor(node));
+              }
+              // Only once the event is known to be handled: an unhandled
+              // submit must still navigate.
+              if (e.preventDefault) e.preventDefault();
+              for (var t = 0; t < targets.length; t++) {
+                send({ type: 'event', region: targets[t], event: name, payload: payload });
               }
               return;
             }
@@ -197,7 +251,7 @@
     var send = function (m) { ws.send(JSON.stringify(m)); };
     ws.onopen = function () {
       send({ type: 'resume', token: manifest.token });
-      wireLive(send);
+      wireLive(send, manifest.ids);
     };
     ws.onmessage = function (e) { dispatchServer(JSON.parse(e.data)); };
     ws.onclose = function () { pollLive(manifest); };
@@ -220,7 +274,7 @@
         body: JSON.stringify(m)
       });
     };
-    wireLive(send);
+    wireLive(send, manifest.ids);
     var delay = 500;
     function loop() {
       fetch(base + '/poll?token=' + encodeURIComponent(manifest.token))
@@ -265,6 +319,8 @@
     applyError: applyError,
     stitchLive: stitchLive,
     wireLive: wireLive,
+    serializeForm: serializeForm,
+    targetsFor: targetsFor,
     connectLive: connectLive,
     pollLive: pollLive
   };
