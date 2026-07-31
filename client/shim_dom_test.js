@@ -336,4 +336,47 @@ function slotPending(id) {
   assert(Object.keys(got).length === 2, 'unnamed controls are skipped');
 })();
 
+// Scenario 11: a server error message is escaped before it reaches the DOM.
+// RenderFailure.Error wraps whatever an application's Mount returned, and
+// those errors routinely echo request input ("unknown testament %q"), so
+// interpolating the message raw made every such error a reflected XSS.
+(function () {
+  all = [];
+  const body = new El('body');
+  const slot = makeSlot('cards');
+
+  window.__quicken.applyError('cards', '<img src=x onerror=alert(1)>');
+
+  const html = slot.innerHTML || '';
+  assert(html.indexOf('<img') === -1, 'raw markup must not reach innerHTML');
+  assert(html.indexOf('&lt;img') !== -1, 'the message should be escaped');
+  assert(html.indexOf('data-q-error') !== -1, 'the error wrapper should survive escaping');
+})();
+
+// Scenario 12: region content is HTML by design and must NOT be escaped --
+// only the plain-text error message is.
+(function () {
+  all = [];
+  const body = new El('body');
+  const slot = makeSlot('verses');
+
+  window.__quicken.applyFull('verses', ['<b>', '</b>'], ['hi']);
+
+  assert((slot.innerHTML || '').indexOf('<b>') !== -1, 'region markup must stay raw');
+})();
+
+// Scenario 13: a transport failure is surfaced, not swallowed. A live region
+// whose events never arrive is indistinguishable from one nobody clicked.
+(function () {
+  all = [];
+  const seen = [];
+  window.__quicken.onError = function (d) { seen.push(d); };
+  window.__quicken.reportError('event rejected: 404');
+  assert(seen.length === 1 && seen[0].indexOf('404') !== -1, 'onError should receive the detail');
+
+  window.__quicken.onError = function () { throw new Error('bad handler'); };
+  window.__quicken.reportError('still fine'); // must not throw
+  window.__quicken.onError = null;
+})();
+
 console.log('quicken.js swap shim: all scenarios passed');

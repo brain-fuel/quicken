@@ -124,10 +124,43 @@
     }
   }
 
+  // escapeText makes a plain string safe to interpolate into innerHTML.
+  //
+  // Only for text the server sends as text. Region content is HTML by
+  // design and must NOT go through this -- applyFirst/applyFull/applyPatch
+  // insert markup deliberately.
+  function escapeText(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // reportError surfaces a transport failure.
+  //
+  // Silence is the worst option: a live region whose events never arrive
+  // looks exactly like one nobody clicked. Logging gives a developer
+  // something to find, and onError lets an application show the user that
+  // the page has stopped updating.
+  function reportError(detail) {
+    if (typeof console !== 'undefined' && console.error) {
+      console.error('quicken: ' + detail);
+    }
+    var hook = window.__quicken && window.__quicken.onError;
+    if (typeof hook === 'function') {
+      try { hook(detail); } catch (e) { /* a broken handler must not break the transport */ }
+    }
+  }
+
   function applyError(region, message) {
     var slot = document.getElementById('q-slot-' + region);
     if (!slot) return;
-    slot.innerHTML = '<div data-q-error>' + message + '</div>';
+    // The message is a plain string built server-side from an application
+    // error (RenderFailure.Error wraps whatever Mount returned), so it can
+    // carry request-derived text -- "unknown testament \"<script>\"" and the
+    // like. Interpolating it raw made every such error a reflected XSS.
+    slot.innerHTML = '<div data-q-error>' + escapeText(message) + '</div>';
     slot.removeAttribute('data-q-pending');
   }
 
@@ -248,7 +281,10 @@
     try {
       ws = new WebSocket(proto + location.host + manifest.ws);
     } catch (e) { pollLive(manifest); return; }
-    var send = function (m) { ws.send(JSON.stringify(m)); };
+    var send = function (m) {
+      try { ws.send(JSON.stringify(m)); }
+      catch (e) { reportError('event send failed on the socket: ' + e); }
+    };
     ws.onopen = function () {
       send({ type: 'resume', token: manifest.token });
       wireLive(send, manifest.ids);
@@ -272,6 +308,13 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(m)
+      }).then(function (r) {
+        // An unchecked fetch swallows the answer: a 404 here means the
+        // event route was never mounted, and without this the region just
+        // stops updating with nothing logged anywhere.
+        if (!r.ok) reportError('event rejected: ' + r.status + ' ' + base + '/event');
+      }).catch(function (e) {
+        reportError('event send failed: ' + e);
       });
     };
     wireLive(send, manifest.ids);
@@ -280,6 +323,14 @@
       fetch(base + '/poll?token=' + encodeURIComponent(manifest.token))
         .then(function (r) {
           if (r.status === 204) return null;
+          // A 4xx will not fix itself -- an unmounted route or an expired
+          // session -- but the retry loop treats it exactly like a dropped
+          // connection, so without this it backs off and retries forever
+          // in silence.
+          if (!r.ok) {
+            reportError('poll rejected: ' + r.status + ' ' + base + '/poll');
+            return null;
+          }
           return r.json();
         })
         .then(function (msg) {
@@ -321,6 +372,11 @@
     wireLive: wireLive,
     serializeForm: serializeForm,
     targetsFor: targetsFor,
+    escapeText: escapeText,
+    reportError: reportError,
+    // onError is unset by default; an application assigns a function to be
+    // told when the live transport fails.
+    onError: null,
     connectLive: connectLive,
     pollLive: pollLive
   };
