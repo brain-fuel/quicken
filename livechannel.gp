@@ -56,6 +56,25 @@ func liveWSPath(name string) string {
 	return liveBasePath(name) + "/ws"
 }
 
+// LivePaths returns the WebSocket, poll and event paths for p, in that
+// order, or nil when p has no live regions.
+//
+// Serve mounts these itself on the mux it is given. A host that routes the
+// page through a different mux -- wrapping it to resolve per-request state,
+// say -- needs them mounted on the outer one too, and hardcoding "/_live/ws"
+// at the call site silently 404s every event if these paths ever move.
+//
+// The exact paths are returned rather than the "/_live/" prefix because
+// net/http's ServeMux rejects that prefix as ambiguous against any
+// three-segment pattern: "/_live/" and "/{a}/{b}/{c}" both match
+// "/_live//x" and neither is more specific.
+func LivePaths(p *Page) []string {
+	if p == nil || len(p.liveIDs()) == 0 {
+		return nil
+	}
+	return []string{liveWSPath(p.name), livePollPath(p.name), liveEventPath(p.name)}
+}
+
 // liveManifestJSON builds the live manifest the client shim reads to resume a
 // session: the WebSocket path, the resume token, and every live region id, as
 // a `<script type="application/json" data-q-live>` element. It is the single
